@@ -1,7 +1,8 @@
-export default function Home() {
-  return (
-    <main className="flex flex-1 items-center justify-center">
-      <h1 className="text-2xl font-semibold">Empty project</h1>
-    </main>
-  );
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth/session";
+
+export default async function RootPage() {
+  const user = await getCurrentUser();
+  if (user) redirect("/dashboard");
+  redirect("/login");
 }

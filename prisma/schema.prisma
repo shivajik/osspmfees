@@ -1,0 +1,367 @@
+// Prisma schema — production data model for Ledgerly.
+// This file is the source of truth for the DB. The current preview uses an
+// in-memory store in lib/db/store.ts; swap repositories to Prisma when wiring.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum InstituteStatus { ACTIVE SUSPENDED ARCHIVED }
+enum UserRole { SUPER_ADMIN INSTITUTE_ADMIN ACCOUNTANT CASHIER VIEWER }
+enum StudentStatus { ACTIVE INACTIVE TRANSFERRED }
+enum PaymentMode { CASH BANK CARD UPI CHEQUE ONLINE }
+enum PaymentStatus { PAID PARTIAL PENDING CANCELLED }
+enum ExpenseStatus { DRAFT APPROVED REJECTED PAID }
+
+model Institute {
+  id         String          @id @default(cuid())
+  name       String
+  code       String          @unique
+  address    String?
+  phone      String?
+  email      String?
+  status     InstituteStatus @default(ACTIVE)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  createdBy  String?
+  updatedBy  String?
+  deletedAt  DateTime?
+
+  users          User[]
+  academicYears  AcademicYear[]
+  classes        Class[]
+  batches        Batch[]
+  students       Student[]
+  feeStructures  FeeStructure[]
+  feeAssignments FeeAssignment[]
+  feePayments    FeePayment[]
+  expenses       Expense[]
+  expenseCats    ExpenseCategory[]
+  accounts       Account[]
+  transactions   Transaction[]
+  auditLogs      AuditLog[]
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String
+  passwordHash      String
+  role              UserRole
+  instituteId       String?
+  institute         Institute? @relation(fields: [instituteId], references: [id], onDelete: SetNull)
+  active            Boolean  @default(true)
+  emailVerifiedAt   DateTime?
+  lastLoginAt       DateTime?
+  failedLoginCount  Int      @default(0)
+  lockedUntil       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  createdBy         String?
+  updatedBy         String?
+  deletedAt         DateTime?
+
+  refreshTokens     RefreshToken[]
+  passwordResets    PasswordReset[]
+
+  @@index([instituteId])
+  @@index([role])
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jti        String   @unique
+  revokedAt  DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  createdByIp String?
+
+  @@index([userId])
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model AcademicYear {
+  id          String   @id @default(cuid())
+  instituteId String
+  institute   Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  name        String
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
+
+  batches     Batch[]
+  students    Student[]
+  feeStructures FeeStructure[]
+
+  @@unique([instituteId, name])
+}
+
+model Class {
+  id          String   @id @default(cuid())
+  instituteId String
+  institute   Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  name        String
+  code        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
+
+  batches     Batch[]
+  students    Student[]
+  feeStructures FeeStructure[]
+
+  @@unique([instituteId, name])
+}
+
+model Batch {
+  id             String       @id @default(cuid())
+  instituteId    String
+  institute      Institute    @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  classId        String
+  class          Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  name           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  createdBy      String?
+  updatedBy      String?
+  deletedAt      DateTime?
+
+  students       Student[]
+
+  @@unique([instituteId, classId, academicYearId, name])
+}
+
+model Student {
+  id             String        @id @default(cuid())
+  instituteId    String
+  institute      Institute     @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  admissionNo    String
+  name           String
+  guardianName   String?
+  phone          String?
+  email          String?
+  dateOfBirth    DateTime?
+  gender         String?
+  address        String?
+  classId        String
+  class          Class         @relation(fields: [classId], references: [id])
+  batchId        String
+  batch          Batch         @relation(fields: [batchId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id])
+  status         StudentStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  createdBy      String?
+  updatedBy      String?
+  deletedAt      DateTime?
+
+  assignments    FeeAssignment[]
+  payments       FeePayment[]
+
+  @@unique([instituteId, admissionNo])
+  @@index([instituteId, classId, batchId])
+}
+
+model FeeStructure {
+  id             String   @id @default(cuid())
+  instituteId    String
+  institute      Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  classId        String
+  class          Class    @relation(fields: [classId], references: [id])
+  name           String
+  totalAmount    Decimal  @db.Decimal(12, 2)
+  dueDate        DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String?
+  updatedBy      String?
+  deletedAt      DateTime?
+
+  items          FeeStructureItem[]
+  assignments    FeeAssignment[]
+
+  @@index([instituteId, academicYearId])
+}
+
+model FeeStructureItem {
+  id              String   @id @default(cuid())
+  feeStructureId  String
+  feeStructure    FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  head            String
+  amount          Decimal  @db.Decimal(12, 2)
+}
+
+model FeeAssignment {
+  id             String   @id @default(cuid())
+  instituteId    String
+  institute      Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feeStructureId String
+  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id])
+  discount       Decimal  @db.Decimal(12, 2) @default(0)
+  totalPayable   Decimal  @db.Decimal(12, 2)
+  totalPaid      Decimal  @db.Decimal(12, 2) @default(0)
+  status         PaymentStatus @default(PENDING)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  payments       FeePayment[]
+
+  @@unique([studentId, feeStructureId])
+  @@index([instituteId, status])
+}
+
+model FeePayment {
+  id             String   @id @default(cuid())
+  instituteId    String
+  institute      Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  assignmentId   String
+  assignment     FeeAssignment @relation(fields: [assignmentId], references: [id])
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id])
+  receiptNo      String   @unique
+  amount         Decimal  @db.Decimal(12, 2)
+  mode           PaymentMode
+  accountId      String?
+  account        Account? @relation(fields: [accountId], references: [id])
+  reference      String?
+  paidAt         DateTime @default(now())
+  createdAt      DateTime @default(now())
+  createdBy      String?
+
+  transaction    Transaction?
+
+  @@index([instituteId, paidAt])
+  @@index([studentId])
+}
+
+model ExpenseCategory {
+  id          String   @id @default(cuid())
+  instituteId String
+  institute   Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  name        String
+  parentId    String?
+  parent      ExpenseCategory? @relation("ExpenseCategoryToParent", fields: [parentId], references: [id])
+  children    ExpenseCategory[] @relation("ExpenseCategoryToParent")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  expenses    Expense[]
+
+  @@unique([instituteId, name])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  instituteId String
+  institute   Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
+  voucherNo   String   @unique
+  description String
+  amount      Decimal  @db.Decimal(12, 2)
+  spentAt     DateTime
+  mode        PaymentMode
+  accountId   String?
+  account     Account? @relation(fields: [accountId], references: [id])
+  status      ExpenseStatus @default(PAID)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
+
+  transaction Transaction?
+
+  @@index([instituteId, spentAt])
+}
+
+model Account {
+  id           String   @id @default(cuid())
+  instituteId  String
+  institute    Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  name         String
+  type         String   // BANK | CASH
+  bankName     String?
+  accountNo    String?
+  ifsc         String?
+  openingBal   Decimal  @db.Decimal(14, 2) @default(0)
+  currentBal   Decimal  @db.Decimal(14, 2) @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  payments     FeePayment[]
+  expenses     Expense[]
+  transactions Transaction[]
+
+  @@unique([instituteId, name])
+}
+
+model Transaction {
+  id           String   @id @default(cuid())
+  instituteId  String
+  institute    Institute @relation(fields: [instituteId], references: [id], onDelete: Cascade)
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id])
+  direction    String   // CREDIT | DEBIT
+  amount       Decimal  @db.Decimal(14, 2)
+  balanceAfter Decimal  @db.Decimal(14, 2)
+  reference    String?
+  paymentId    String?  @unique
+  payment      FeePayment? @relation(fields: [paymentId], references: [id])
+  expenseId    String?  @unique
+  expense      Expense? @relation(fields: [expenseId], references: [id])
+  occurredAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@index([instituteId, occurredAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  instituteId String?
+  institute   Institute? @relation(fields: [instituteId], references: [id], onDelete: SetNull)
+  actorId     String
+  actorEmail  String
+  action      String
+  entity      String
+  entityId    String?
+  meta        Json?
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([instituteId, createdAt])
+  @@index([actorId])
+}
