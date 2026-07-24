@@ -59,7 +59,7 @@ export function Sidebar({ role, permissions }: { role: string; permissions: stri
   return (
     <aside className="hidden md:flex md:w-64 md:shrink-0 md:flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex h-14 items-center gap-2 border-b border-[var(--color-border)] px-4">
-        <div className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-violet-500 to-cyan-400 text-xs font-bold text-black">L</div>
+        <div className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-indigo-600 to-sky-500 text-xs font-bold text-white">L</div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-semibold">Ledgerly</span>
           <span className="text-[10px] uppercase tracking-widest text-[var(--color-fg-subtle)]">Fees & Expense</span>
@@ -89,7 +89,7 @@ export function Sidebar({ role, permissions }: { role: string; permissions: stri
                         className={cn(
                           "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
                           active
-                            ? "bg-[var(--color-surface-2)] text-[var(--color-fg)]"
+                            ? "bg-[var(--color-brand-soft)] text-[var(--color-brand)] font-medium"
                             : "text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]",
                         )}
                       >

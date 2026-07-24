@@ -37,7 +37,7 @@ export function NewClassButton() {
         >
           <Field label="Name"><Input name="name" required maxLength={60} placeholder="Grade 10" /></Field>
           <Field label="Code"><Input name="code" maxLength={20} placeholder="10" /></Field>
-          {error && <p className="sm:col-span-2 text-xs text-red-400">{error}</p>}
+          {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
       </Modal>
     </>

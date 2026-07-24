@@ -1,9 +1,17 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-dvh grid place-items-center text-sm text-[var(--color-fg-muted)]">Loading…</div>}>
+      <LoginInner />
+    </Suspense>
+  );
+}
 
 const demo = [
   { email: "super@ledgerly.app", label: "Super Admin" },
@@ -13,7 +21,14 @@ const demo = [
   { email: "viewer@greenwood.edu", label: "Viewer" },
 ];
 
-export default function LoginPage() {
+function LoginInner() {
+  const demo = [
+    { email: "super@ledgerly.app", label: "Super Admin" },
+    { email: "admin@greenwood.edu", label: "Institute Admin" },
+    { email: "accountant@greenwood.edu", label: "Accountant" },
+    { email: "cashier@greenwood.edu", label: "Cashier" },
+    { email: "viewer@greenwood.edu", label: "Viewer" },
+  ];
   const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = useState("super@ledgerly.app");
@@ -47,7 +62,7 @@ export default function LoginPage() {
     <div className="min-h-dvh grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between border-r border-[var(--color-border)] bg-[var(--color-surface)] p-10">
         <div className="flex items-center gap-2">
-          <div className="grid h-8 w-8 place-items-center rounded-md bg-gradient-to-br from-violet-500 to-cyan-400 text-sm font-bold text-black">L</div>
+          <div className="grid h-8 w-8 place-items-center rounded-md bg-gradient-to-br from-indigo-600 to-sky-500 text-sm font-bold text-white">L</div>
           <span className="text-sm font-semibold tracking-tight">Ledgerly</span>
         </div>
         <div className="max-w-md">
@@ -76,7 +91,7 @@ export default function LoginPage() {
             <Field label="Password" htmlFor="password">
               <Input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </Field>
-            {error && <p className="text-xs text-red-400">{error}</p>}
+            {error && <p className="text-xs text-red-600">{error}</p>}
             <Button type="submit" disabled={loading} className="w-full">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Sign in

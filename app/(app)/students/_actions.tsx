@@ -71,7 +71,7 @@ export function NewStudentButton({
               </Select>
             </Field>
           </div>
-          {error && <p className="sm:col-span-2 text-xs text-red-400">{error}</p>}
+          {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
       </Modal>
     </>

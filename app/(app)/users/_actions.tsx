@@ -71,7 +71,7 @@ export function NewUserButton({
               <Input name="password" type="text" minLength={10} required defaultValue="Password123!" />
             </Field>
           </div>
-          {error && <p className="sm:col-span-2 text-xs text-red-400">{error}</p>}
+          {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
       </Modal>
     </>

@@ -51,6 +51,20 @@ export async function createStudent(fd: FormData): Promise<{ error?: string } | 
     status: "ACTIVE",
     createdAt: new Date().toISOString(),
   });
+
+  // Auto-create fee assignment if structure exists for this class + year
+  const structure = Array.from(store.feeStructures.values()).find(
+    (fs) => fs.instituteId === user.instituteId && fs.classId === parsed.data.classId && fs.academicYearId === parsed.data.academicYearId,
+  );
+  if (structure) {
+    const aid = uid("fa");
+    store.feeAssignments.set(aid, {
+      id: aid, instituteId: user.instituteId, studentId: id, feeStructureId: structure.id,
+      discount: 0, totalPayable: structure.totalAmount, totalPaid: 0, status: "PENDING",
+      createdAt: new Date().toISOString(),
+    });
+  }
+
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "student.create", entity: "Student", entityId: id, meta: { admissionNo: parsed.data.admissionNo },

@@ -51,7 +51,7 @@ export function NewBatchButton({
               {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
             </Select>
           </Field>
-          {error && <p className="sm:col-span-2 text-xs text-red-400">{error}</p>}
+          {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
       </Modal>
     </>

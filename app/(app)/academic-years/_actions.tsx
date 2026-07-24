@@ -44,7 +44,7 @@ export function NewAcademicYearButton() {
           </div>
           <Field label="Start date"><Input name="startDate" type="date" required /></Field>
           <Field label="End date"><Input name="endDate" type="date" required /></Field>
-          {error && <p className="sm:col-span-2 text-xs text-red-400">{error}</p>}
+          {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
       </Modal>
     </>

@@ -9,7 +9,7 @@ export function Header({ user }: { user: { name: string; email: string; role: st
   }
   const initials = user.name.split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase();
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 px-4 backdrop-blur">
+    <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/90 px-4 backdrop-blur">
       <div className="relative w-full max-w-md">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-fg-subtle)]" />
         <input
@@ -21,7 +21,7 @@ export function Header({ user }: { user: { name: string; email: string; role: st
         {user.instituteName && <Badge tone="info">{user.instituteName}</Badge>}
         <Badge tone="brand">{user.role.replace("_", " ")}</Badge>
         <div className="flex items-center gap-2">
-          <div className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 text-xs font-semibold text-black">
+          <div className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-indigo-600 to-sky-500 text-xs font-semibold text-white">
             {initials}
           </div>
           <div className="hidden flex-col text-xs leading-tight sm:flex">

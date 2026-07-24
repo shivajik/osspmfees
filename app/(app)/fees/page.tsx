@@ -1,11 +1,147 @@
+import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth/session";
+import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
+import { scopeByInstitute, store } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
-import { Card } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import { CollectFeeButton, NewStructureButton } from "./_actions";
+import Link from "next/link";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-export default function FeesPage() {
+export default async function FeesPage() {
+  const user = await requireUser();
+  const perms = permissionsForRole(user.role);
+  if (!hasPermission(perms, PERMISSIONS.FEE_READ)) redirect("/dashboard");
+
+  const scope = user.instituteId;
+  const canCollect = hasPermission(perms, PERMISSIONS.FEE_COLLECT) && !!scope;
+  const canWriteStructure = hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE) && !!scope;
+
+  const assignments = scopeByInstitute(store.feeAssignments.values(), scope);
+  const structures = scopeByInstitute(store.feeStructures.values(), scope);
+  const payments = scopeByInstitute(store.feePayments.values(), scope)
+    .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
+    .slice(0, 10);
+  const accounts = scope ? scopeByInstitute(store.accounts.values(), scope) : [];
+  const classes = scope ? scopeByInstitute(store.classes.values(), scope) : [];
+  const years = scope ? scopeByInstitute(store.academicYears.values(), scope) : [];
+
+  const totalPayable = assignments.reduce((s, a) => s + a.totalPayable, 0);
+  const totalPaid = assignments.reduce((s, a) => s + a.totalPaid, 0);
+  const totalOutstanding = totalPayable - totalPaid;
+
   return (
     <>
-      <PageHeader title="Fees" description="Fee structures, assignment, collection, receipts." />
-      <Card><p className="text-sm text-[var(--color-fg-muted)]">Coming in Milestone 5 — fee structures, assignment, partial payments, receipts.</p></Card>
+      <PageHeader
+        title="Fee collection"
+        description="Assignments, partial payments, and receipts for the current academic year."
+        actions={
+          <div className="flex gap-2">
+            {canWriteStructure && (
+              <NewStructureButton
+                classes={classes.map((c) => ({ id: c.id, name: c.name }))}
+                years={years.map((y) => ({ id: y.id, name: y.name }))}
+              />
+            )}
+          </div>
+        }
+      />
+
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Card>
+          <CardHeader><div><CardTitle>Total payable</CardTitle><CardDescription>All active assignments</CardDescription></div></CardHeader>
+          <p className="text-2xl font-semibold">{formatCurrency(totalPayable)}</p>
+        </Card>
+        <Card>
+          <CardHeader><div><CardTitle>Collected</CardTitle><CardDescription>Received to date</CardDescription></div></CardHeader>
+          <p className="text-2xl font-semibold text-emerald-600">{formatCurrency(totalPaid)}</p>
+        </Card>
+        <Card>
+          <CardHeader><div><CardTitle>Outstanding</CardTitle><CardDescription>Yet to collect</CardDescription></div></CardHeader>
+          <p className="text-2xl font-semibold text-amber-600">{formatCurrency(totalOutstanding)}</p>
+        </Card>
+      </div>
+
+      <div className="mb-2 text-sm font-medium">Assignments</div>
+      <DataTable
+        rowKey={(r) => r.id}
+        rows={assignments}
+        empty="No fee assignments yet"
+        columns={[
+          { key: "stu", header: "Student", render: (r) => {
+            const s = store.students.get(r.studentId);
+            return <div><div className="font-medium">{s?.name ?? "—"}</div><div className="text-xs text-[var(--color-fg-muted)] font-mono">{s?.admissionNo}</div></div>;
+          }},
+          { key: "class", header: "Class", render: (r) => {
+            const s = store.students.get(r.studentId);
+            return s ? store.classes.get(s.classId)?.name ?? "—" : "—";
+          }},
+          { key: "fs", header: "Structure", render: (r) => store.feeStructures.get(r.feeStructureId)?.name ?? "—" },
+          { key: "payable", header: "Payable", render: (r) => <span className="font-medium">{formatCurrency(r.totalPayable)}</span> },
+          { key: "paid", header: "Paid", render: (r) => <span className="text-emerald-600">{formatCurrency(r.totalPaid)}</span> },
+          { key: "bal", header: "Balance", render: (r) => <span className="text-amber-600 font-medium">{formatCurrency(r.totalPayable - r.totalPaid)}</span> },
+          { key: "status", header: "Status", render: (r) => (
+            <Badge tone={r.status === "PAID" ? "success" : r.status === "PARTIAL" ? "info" : "warning"}>{r.status}</Badge>
+          )},
+          { key: "action", header: "", render: (r) => (
+            canCollect && r.status !== "PAID" ? (
+              <CollectFeeButton
+                assignmentId={r.id}
+                studentName={store.students.get(r.studentId)?.name ?? ""}
+                balance={r.totalPayable - r.totalPaid}
+                accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
+              />
+            ) : null
+          )},
+        ]}
+      />
+
+      <div className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader><div><CardTitle>Recent receipts</CardTitle><CardDescription>Last 10 payments</CardDescription></div></CardHeader>
+          {payments.length === 0 ? (
+            <p className="text-xs text-[var(--color-fg-muted)]">No payments yet.</p>
+          ) : (
+            <ul className="divide-y divide-[var(--color-border)] text-sm">
+              {payments.map((p) => {
+                const s = store.students.get(p.studentId);
+                return (
+                  <li key={p.id} className="flex items-center justify-between py-2">
+                    <div>
+                      <Link href={`/fees/receipts/${p.id}`} className="font-medium text-[var(--color-brand)] hover:underline">{p.receiptNo}</Link>
+                      <div className="text-xs text-[var(--color-fg-muted)]">{s?.name} · {p.mode}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">{formatCurrency(p.amount)}</div>
+                      <div className="text-xs text-[var(--color-fg-subtle)]">{formatDate(p.paidAt)}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+        <Card>
+          <CardHeader><div><CardTitle>Fee structures</CardTitle><CardDescription>Class-level fee templates</CardDescription></div></CardHeader>
+          {structures.length === 0 ? (
+            <p className="text-xs text-[var(--color-fg-muted)]">No structures defined.</p>
+          ) : (
+            <ul className="divide-y divide-[var(--color-border)] text-sm">
+              {structures.map((fs) => (
+                <li key={fs.id} className="flex items-center justify-between py-2">
+                  <div>
+                    <div className="font-medium">{fs.name}</div>
+                    <div className="text-xs text-[var(--color-fg-muted)]">{store.classes.get(fs.classId)?.name} · {fs.items.length} heads</div>
+                  </div>
+                  <div className="font-semibold">{formatCurrency(fs.totalAmount)}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
     </>
   );
 }

@@ -5,25 +5,41 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { Badge } from "@/components/ui/badge";
 import { store, scopeByInstitute } from "@/lib/db/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Wallet, ReceiptText, GraduationCap, Landmark, Building2, TrendingUp, AlertTriangle } from "lucide-react";
+import { Wallet, ReceiptText, GraduationCap, Landmark, Building2, TrendingUp, AlertTriangle, Users } from "lucide-react";
 
 export default async function DashboardPage() {
   const user = await requireUser();
   const scope = user.instituteId;
   const students = scopeByInstitute(store.students.values(), scope);
   const institutes = Array.from(store.institutes.values());
-  const audits = store.auditLogs.slice(0, 6);
+  const audits = store.auditLogs.slice(0, 8);
+  const payments = scopeByInstitute(store.feePayments.values(), scope);
+  const expenses = scopeByInstitute(store.expenses.values(), scope);
+  const assignments = scopeByInstitute(store.feeAssignments.values(), scope);
+  const accounts = scopeByInstitute(store.accounts.values(), scope);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const monthKey = today.slice(0, 7);
+  const todayCollection = payments.filter((p) => p.paidAt.slice(0, 10) === today).reduce((s, p) => s + p.amount, 0);
+  const monthlyCollection = payments.filter((p) => p.paidAt.slice(0, 7) === monthKey).reduce((s, p) => s + p.amount, 0);
+  const todayExpense = expenses.filter((e) => e.spentAt.slice(0, 10) === today).reduce((s, e) => s + e.amount, 0);
+  const pending = assignments.reduce((s, a) => s + (a.totalPayable - a.totalPaid), 0);
+  const pendingStudents = new Set(assignments.filter((a) => a.status !== "PAID").map((a) => a.studentId)).size;
+  const bankBal = accounts.filter((a) => a.type === "BANK").reduce((s, a) => s + a.currentBal, 0);
+  const cashBal = accounts.filter((a) => a.type === "CASH").reduce((s, a) => s + a.currentBal, 0);
 
   const stats = [
-    { label: "Today's collection", value: formatCurrency(148500), hint: "12 receipts", icon: ReceiptText, tone: "brand" as const },
-    { label: "Monthly collection", value: formatCurrency(2340000), hint: "+18% vs last month", icon: TrendingUp, tone: "success" as const },
-    { label: "Today's expenses", value: formatCurrency(24800), hint: "6 vouchers", icon: Wallet, tone: "warning" as const },
-    { label: "Pending fees", value: formatCurrency(985000), hint: "132 students", icon: AlertTriangle, tone: "warning" as const },
-    { label: "Bank balance", value: formatCurrency(5720000), hint: "3 accounts", icon: Landmark, tone: "info" as const },
-    { label: "Cash balance", value: formatCurrency(148500), hint: "In hand", icon: Wallet, tone: "brand" as const },
-    { label: "Students", value: String(students.length || 0), hint: user.instituteId ? "Active" : "Across all institutes", icon: GraduationCap, tone: "info" as const },
-    { label: "Institutes", value: String(institutes.length), hint: "Managed tenants", icon: Building2, tone: "brand" as const },
+    { label: "Today's collection", value: formatCurrency(todayCollection), hint: `${payments.filter((p) => p.paidAt.slice(0, 10) === today).length} receipts`, icon: ReceiptText, tone: "brand" as const },
+    { label: "Monthly collection", value: formatCurrency(monthlyCollection), hint: monthKey, icon: TrendingUp, tone: "success" as const },
+    { label: "Today's expenses", value: formatCurrency(todayExpense), hint: `${expenses.filter((e) => e.spentAt.slice(0, 10) === today).length} vouchers`, icon: Wallet, tone: "warning" as const },
+    { label: "Pending fees", value: formatCurrency(pending), hint: `${pendingStudents} students`, icon: AlertTriangle, tone: "warning" as const },
+    { label: "Bank balance", value: formatCurrency(bankBal), hint: `${accounts.filter((a) => a.type === "BANK").length} accounts`, icon: Landmark, tone: "info" as const },
+    { label: "Cash balance", value: formatCurrency(cashBal), hint: "In hand", icon: Wallet, tone: "brand" as const },
+    { label: "Students", value: String(students.length), hint: user.instituteId ? "Active" : "Across all institutes", icon: GraduationCap, tone: "info" as const },
+    { label: user.instituteId ? "Users" : "Institutes", value: String(user.instituteId ? Array.from(store.users.values()).filter((u) => u.instituteId === user.instituteId).length : institutes.length), hint: user.instituteId ? "In institute" : "Managed tenants", icon: user.instituteId ? Users : Building2, tone: "brand" as const },
   ];
+
+  const trend = last14Days(payments);
 
   return (
     <>
@@ -41,17 +57,17 @@ export default async function DashboardPage() {
           <CardHeader>
             <div>
               <CardTitle>Collection trend</CardTitle>
-              <CardDescription>Last 14 days — cash vs bank</CardDescription>
+              <CardDescription>Last 14 days — fee receipts</CardDescription>
             </div>
-            <Badge tone="success">+18.2%</Badge>
+            <Badge tone="success">{formatCurrency(trend.reduce((s, v) => s + v.value, 0))}</Badge>
           </CardHeader>
-          <MiniTrend />
+          <MiniTrend bars={trend} />
         </Card>
         <Card>
           <CardHeader>
             <div>
               <CardTitle>Recent activity</CardTitle>
-              <CardDescription>System-wide audit stream</CardDescription>
+              <CardDescription>Audit stream</CardDescription>
             </div>
           </CardHeader>
           {audits.length === 0 ? (
@@ -75,13 +91,30 @@ export default async function DashboardPage() {
   );
 }
 
-function MiniTrend() {
-  const bars = [40, 55, 48, 62, 70, 58, 72, 80, 66, 78, 85, 74, 90, 96];
-  const max = Math.max(...bars);
+function last14Days(payments: { paidAt: string; amount: number }[]) {
+  const days: { label: string; value: number }[] = [];
+  const now = new Date();
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now); d.setDate(now.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const value = payments.filter((p) => p.paidAt.slice(0, 10) === key).reduce((s, p) => s + p.amount, 0);
+    days.push({ label: key.slice(5), value });
+  }
+  return days;
+}
+
+function MiniTrend({ bars }: { bars: { label: string; value: number }[] }) {
+  const max = Math.max(1, ...bars.map((b) => b.value));
   return (
     <div className="mt-2 flex h-40 items-end gap-1.5">
-      {bars.map((v, i) => (
-        <div key={i} className="flex-1 rounded-t-sm bg-gradient-to-t from-violet-500/70 to-cyan-400/70" style={{ height: `${(v / max) * 100}%` }} />
+      {bars.map((b, i) => (
+        <div key={i} className="group relative flex-1">
+          <div
+            className="rounded-t-sm bg-gradient-to-t from-indigo-500 to-sky-400 transition-opacity hover:opacity-80"
+            style={{ height: `${Math.max(4, (b.value / max) * 140)}px` }}
+            title={`${b.label}: ${b.value}`}
+          />
+        </div>
       ))}
     </div>
   );

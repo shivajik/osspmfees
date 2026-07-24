@@ -1,20 +1,21 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #0b0d10;
-  --color-surface: #101317;
-  --color-surface-2: #161a20;
-  --color-border: #1f242c;
-  --color-border-strong: #2a303a;
-  --color-fg: #e6e8eb;
-  --color-fg-muted: #9098a4;
-  --color-fg-subtle: #6b7280;
-  --color-brand: #7c5cff;
+  --color-bg: #f6f8fb;
+  --color-surface: #ffffff;
+  --color-surface-2: #f2f4f8;
+  --color-border: #e5e7eb;
+  --color-border-strong: #d1d5db;
+  --color-fg: #0f172a;
+  --color-fg-muted: #475569;
+  --color-fg-subtle: #94a3b8;
+  --color-brand: #4f46e5;
   --color-brand-fg: #ffffff;
-  --color-accent: #22d3ee;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
+  --color-brand-soft: #eef2ff;
+  --color-accent: #0ea5e9;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
@@ -22,10 +23,12 @@
   --radius-lg: 14px;
   --radius-md: 10px;
   --radius-sm: 6px;
+
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.05);
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html, body {
@@ -40,17 +43,18 @@ html, body {
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--color-brand) 40%, transparent);
+  background: color-mix(in oklab, var(--color-brand) 25%, transparent);
 }
 
 @utility card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
 }
 
 @utility input-base {
-  background: var(--color-surface-2);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 0.5rem 0.75rem;
@@ -63,4 +67,9 @@ html, body {
 @utility scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-strong) transparent;
+}
+
+@media print {
+  body { background: white; }
+  .no-print { display: none !important; }
 }

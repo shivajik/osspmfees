@@ -47,7 +47,7 @@ export function NewInstituteButton() {
           <div className="sm:col-span-2">
             <Field label="Address"><Input name="address" maxLength={300} /></Field>
           </div>
-          {error && <p className="sm:col-span-2 text-xs text-red-400">{error}</p>}
+          {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
       </Modal>
     </>
