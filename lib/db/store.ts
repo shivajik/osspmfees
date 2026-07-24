@@ -150,7 +150,9 @@ function seed(): Store {
 
   const pw = hashSync("Password123!", 10);
   const mk = (email: string, name: string, role: Role, instituteId: string | null): User => ({
-    id: uid("usr"), email, name, passwordHash: pw, role, instituteId,
+    // Deterministic ID so JWT `sub` stays valid across serverless instances (in-memory store re-seeds per cold start).
+    id: `usr_${email.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`,
+    email, name, passwordHash: pw, role, instituteId,
     active: true, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now,
   });
 
