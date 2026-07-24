@@ -9,17 +9,36 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { CollectFeeButton, NewStructureButton } from "./_actions";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ListToolbar } from "@/components/list-toolbar";
+import { Pagination } from "@/components/pagination";
+import { parseListParams, paginate } from "@/lib/list-params";
 
-export default async function FeesPage() {
+export default async function FeesPage({
+  searchParams,
+}: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireUser();
   const perms = permissionsForRole(user.role);
   if (!hasPermission(perms, PERMISSIONS.FEE_READ)) redirect("/dashboard");
+
+  const sp = await searchParams;
+  const params = parseListParams(sp, { filterKeys: ["status"] });
 
   const scope = user.instituteId;
   const canCollect = hasPermission(perms, PERMISSIONS.FEE_COLLECT) && !!scope;
   const canWriteStructure = hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE) && !!scope;
 
-  const assignments = scopeByInstitute(store.feeAssignments.values(), scope);
+  const allAssignments = scopeByInstitute(store.feeAssignments.values(), scope);
+  const q = params.q.toLowerCase();
+  const assignments = allAssignments.filter((a) => {
+    if (params.filters.status && a.status !== params.filters.status) return false;
+    if (!q) return true;
+    const s = store.students.get(a.studentId);
+    return (
+      (s?.name ?? "").toLowerCase().includes(q) ||
+      (s?.admissionNo ?? "").toLowerCase().includes(q)
+    );
+  });
+  const pageData = paginate(assignments, params.page, params.pageSize);
   const structures = scopeByInstitute(store.feeStructures.values(), scope);
   const payments = scopeByInstitute(store.feePayments.values(), scope)
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
@@ -65,10 +84,21 @@ export default async function FeesPage() {
       </div>
 
       <div className="mb-2 text-sm font-medium">Assignments</div>
+      <ListToolbar
+        placeholder="Search by student name or admission #…"
+        filters={[{
+          key: "status", label: "Status",
+          options: [
+            { value: "PENDING", label: "Pending" },
+            { value: "PARTIAL", label: "Partial" },
+            { value: "PAID", label: "Paid" },
+          ],
+        }]}
+      />
       <DataTable
         rowKey={(r) => r.id}
-        rows={assignments}
-        empty="No fee assignments yet"
+        rows={pageData.rows}
+        empty="No fee assignments match your filters"
         columns={[
           { key: "stu", header: "Student", render: (r) => {
             const s = store.students.get(r.studentId);
@@ -97,6 +127,7 @@ export default async function FeesPage() {
           )},
         ]}
       />
+      <Pagination page={pageData.page} totalPages={pageData.totalPages} total={pageData.total} pageSize={pageData.pageSize} />
 
       <div className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>

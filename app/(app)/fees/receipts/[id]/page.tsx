@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { store } from "@/lib/db/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import { PrintButton } from "./_print";
 
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
@@ -30,7 +30,17 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
         <Link href="/fees" className="inline-flex items-center gap-1.5 text-sm text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]">
           <ArrowLeft className="h-4 w-4" /> Back to fees
         </Link>
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/api/fees/receipts/${p.id}/pdf`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-2)]"
+          >
+            <Download className="h-4 w-4" /> PDF
+          </Link>
+          <PrintButton />
+        </div>
       </div>
 
       <div className="card mx-auto max-w-3xl p-8">

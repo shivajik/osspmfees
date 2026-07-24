@@ -42,12 +42,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         title="Reports"
         description="Analytics, ledgers and exportable statements."
         actions={
-          <Link
-            href={`/api/reports/export?tab=${tab}`}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--color-border-strong)] px-4 text-sm font-medium hover:bg-[var(--color-surface-2)]"
-          >
-            <Download className="h-4 w-4" /> Export CSV
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <ExportLink tab={tab} format="csv" label="CSV" />
+            <ExportLink tab={tab} format="xlsx" label="Excel" />
+            <ExportLink tab={tab} format="pdf" label="PDF" />
+          </div>
         }
       />
 
@@ -233,5 +232,16 @@ function SummaryLine({ label, value }: { label: string; value: string }) {
       <CardHeader><div><CardTitle>{label}</CardTitle><CardDescription>Current filter</CardDescription></div></CardHeader>
       <p className="text-3xl font-semibold">{value}</p>
     </Card>
+  );
+}
+
+function ExportLink({ tab, format, label }: { tab: string; format: "csv" | "xlsx" | "pdf"; label: string }) {
+  return (
+    <Link
+      href={`/api/reports/export?tab=${tab}&format=${format}`}
+      className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-2)]"
+    >
+      <Download className="h-4 w-4" /> {label}
+    </Link>
   );
 }

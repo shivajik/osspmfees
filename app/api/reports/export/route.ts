@@ -2,6 +2,22 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { scopeByInstitute, store } from "@/lib/db/store";
+import { renderTablePdf } from "@/lib/export/pdf";
+import { renderXlsx } from "@/lib/export/xlsx";
+
+export const runtime = "nodejs";
+
+type Format = "csv" | "xlsx" | "pdf";
+
+const TAB_TITLES: Record<string, string> = {
+  daily: "Daily collection",
+  monthly: "Monthly collection",
+  student: "Student collection",
+  pending: "Pending fees",
+  expense: "Expense summary",
+  cashbook: "Cash book",
+  bank: "Bank ledger",
+};
 
 function csv(rows: (string | number)[][]): string {
   return rows.map((r) => r.map((c) => {
@@ -19,6 +35,7 @@ export async function GET(req: Request) {
   const scope = user.instituteId;
   const url = new URL(req.url);
   const tab = url.searchParams.get("tab") ?? "daily";
+  const format = ((url.searchParams.get("format") ?? "csv").toLowerCase() as Format);
 
   let rows: (string | number)[][] = [];
   if (tab === "daily" || tab === "monthly") {
@@ -76,12 +93,52 @@ export async function GET(req: Request) {
       ]));
   }
 
+  const today = new Date().toISOString().slice(0, 10);
+  const baseName = `ledgerly-${tab}-${today}`;
+  const title = TAB_TITLES[tab] ?? "Report";
+
+  if (format === "xlsx") {
+    const bytes = renderXlsx(title, rows);
+    return new NextResponse(bytes as unknown as BodyInit, {
+      status: 200,
+      headers: {
+        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "content-disposition": `attachment; filename="${baseName}.xlsx"`,
+      },
+    });
+  }
+
+  if (format === "pdf") {
+    const header = rows[0] ?? [];
+    const body = rows.slice(1);
+    const columns = header.map((h, i) => {
+      const sample = body.find((r) => r[i] !== undefined);
+      const isNumeric = typeof sample?.[i] === "number";
+      return { header: String(h), width: isNumeric ? 90 : 120, align: (isNumeric ? "right" : "left") as "left" | "right" };
+    });
+    const institute = user.instituteId ? store.institutes.get(user.instituteId)?.name : "All institutes";
+    const bytes = await renderTablePdf({
+      title,
+      subtitle: institute,
+      columns: columns.length ? columns : [{ header: "—", width: 200 }],
+      rows: body,
+      footer: `Ledgerly · ${today}`,
+    });
+    return new NextResponse(bytes as unknown as BodyInit, {
+      status: 200,
+      headers: {
+        "content-type": "application/pdf",
+        "content-disposition": `attachment; filename="${baseName}.pdf"`,
+      },
+    });
+  }
+
   const body = csv(rows);
   return new NextResponse(body, {
     status: 200,
     headers: {
       "content-type": "text/csv; charset=utf-8",
-      "content-disposition": `attachment; filename="ledgerly-${tab}-${new Date().toISOString().slice(0, 10)}.csv"`,
+      "content-disposition": `attachment; filename="${baseName}.csv"`,
     },
   });
 }
