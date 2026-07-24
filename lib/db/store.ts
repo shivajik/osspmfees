@@ -99,6 +99,7 @@ type Store = {
   institutes: Map<string, Institute>;
   users: Map<string, User>;
   refreshTokens: Map<string, { userId: string; createdAt: number }>;
+  passwordResets: Map<string, { userId: string; expiresAt: number; usedAt: number | null }>;
   academicYears: Map<string, AcademicYear>;
   classes: Map<string, ClassRecord>;
   batches: Map<string, Batch>;
@@ -245,7 +246,7 @@ function seed(): Store {
   });
 
   return {
-    institutes, users, refreshTokens: new Map(),
+    institutes, users, refreshTokens: new Map(), passwordResets: new Map(),
     academicYears, classes, batches, students,
     feeStructures, feeAssignments, feePayments,
     expenseCategories, expenses, accounts, transactions,

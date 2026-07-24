@@ -96,6 +96,9 @@ function LoginInner() {
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Sign in
             </Button>
+            <p className="text-center text-xs">
+              <a href="/forgot-password" className="text-[var(--color-fg-muted)] hover:underline">Forgot password?</a>
+            </p>
           </form>
 
           <div className="mt-6">

@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { CollectionChart } from "@/components/collection-chart";
 import { store, scopeByInstitute } from "@/lib/db/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Wallet, ReceiptText, GraduationCap, Landmark, Building2, TrendingUp, AlertTriangle, Users } from "lucide-react";
@@ -61,7 +62,7 @@ export default async function DashboardPage() {
             </div>
             <Badge tone="success">{formatCurrency(trend.reduce((s, v) => s + v.value, 0))}</Badge>
           </CardHeader>
-          <MiniTrend bars={trend} />
+          <CollectionChart data={trend} />
         </Card>
         <Card>
           <CardHeader>
@@ -103,19 +104,3 @@ function last14Days(payments: { paidAt: string; amount: number }[]) {
   return days;
 }
 
-function MiniTrend({ bars }: { bars: { label: string; value: number }[] }) {
-  const max = Math.max(1, ...bars.map((b) => b.value));
-  return (
-    <div className="mt-2 flex h-40 items-end gap-1.5">
-      {bars.map((b, i) => (
-        <div key={i} className="group relative flex-1">
-          <div
-            className="rounded-t-sm bg-gradient-to-t from-indigo-500 to-sky-400 transition-opacity hover:opacity-80"
-            style={{ height: `${Math.max(4, (b.value / max) * 140)}px` }}
-            title={`${b.label}: ${b.value}`}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}

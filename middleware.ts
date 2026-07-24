@@ -1,7 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { verifyAccessToken } from "@/lib/auth/jwt";
 
-const PUBLIC = new Set(["/login", "/api/auth/login", "/api/auth/refresh", "/api/health"]);
+const PUBLIC = new Set([
+  "/login",
+  "/forgot-password",
+  "/reset-password",
+  "/api/auth/login",
+  "/api/auth/refresh",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
+  "/api/health",
+]);
 
 // Basic per-IP token bucket in-memory (per edge instance).
 const buckets = new Map<string, { count: number; resetAt: number }>();
