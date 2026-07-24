@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { pushAudit, store, nextReceiptNo } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { saveStore } from "@/lib/db/persistence";
 
 const collectSchema = z.object({
   assignmentId: z.string().min(1),
@@ -58,6 +59,7 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
     action: "fee.collect", entity: "FeePayment", entityId: paymentId,
     meta: { amount, mode, receiptNo },
   });
+  await saveStore();
   return { paymentId };
 }
 
@@ -104,4 +106,5 @@ export async function createStructure(fd: FormData): Promise<{ error?: string } 
     action: "fee_structure.create", entity: "FeeStructure", entityId: id,
     meta: { name: parsed.data.name, totalAmount: parsed.data.totalAmount },
   });
+  await saveStore();
 }

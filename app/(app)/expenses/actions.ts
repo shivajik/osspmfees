@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { pushAudit, store, nextVoucherNo } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { saveStore } from "@/lib/db/persistence";
 
 const expSchema = z.object({
   description: z.string().min(2).max(200),
@@ -54,6 +55,7 @@ export async function createExpense(fd: FormData): Promise<{ error?: string } | 
     action: "expense.create", entity: "Expense", entityId: id,
     meta: { amount, voucherNo, category: cat.name },
   });
+  await saveStore();
 }
 
 const catSchema = z.object({ name: z.string().min(2).max(80) });
@@ -76,4 +78,5 @@ export async function createCategory(fd: FormData): Promise<{ error?: string } |
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "expense_category.create", entity: "ExpenseCategory", entityId: id, meta: { name: parsed.data.name },
   });
+  await saveStore();
 }

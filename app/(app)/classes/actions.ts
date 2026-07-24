@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({ name: z.string().min(1).max(60), code: z.string().max(20).optional().or(z.literal("")) });
 
@@ -24,4 +25,5 @@ export async function createClass(fd: FormData): Promise<{ error?: string } | vo
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "class.create", entity: "Class", entityId: id, meta: { name: parsed.data.name },
   });
+  await saveStore();
 }

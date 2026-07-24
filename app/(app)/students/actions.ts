@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({
   admissionNo: z.string().min(1).max(40),
@@ -69,4 +70,5 @@ export async function createStudent(fd: FormData): Promise<{ error?: string } | 
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "student.create", entity: "Student", entityId: id, meta: { admissionNo: parsed.data.admissionNo },
   });
+  await saveStore();
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { pushAudit, store } from "@/lib/db/store";
 import { hashPassword } from "@/lib/auth/password";
+import { loadStore, saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({
   token: z.string().min(10).max(200),
@@ -15,6 +16,7 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
+  await loadStore();
   const json = await req.json().catch(() => ({}));
   const parsed = schema.safeParse(json);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid" }, { status: 400 });
@@ -41,6 +43,7 @@ export async function POST(req: Request) {
     entity: "User",
     entityId: user.id,
   });
+  await saveStore();
 
   return NextResponse.json({ ok: true });
 }

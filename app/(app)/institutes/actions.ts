@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { ROLES } from "@/lib/auth/rbac";
 import { pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({
   name: z.string().min(2).max(120),
@@ -42,4 +43,5 @@ export async function createInstitute(fd: FormData): Promise<{ error?: string } 
     entityId: id,
     meta: { code, name },
   });
+  await saveStore();
 }

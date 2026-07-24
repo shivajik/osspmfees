@@ -3,10 +3,12 @@ import { z } from "zod";
 import { findUserByEmail, pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
 import { isEmailConfigured, sendPasswordResetEmail } from "@/lib/email/mailer";
+import { loadStore, saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({ email: z.string().email().max(200) });
 
 export async function POST(req: Request) {
+  await loadStore();
   const json = await req.json().catch(() => ({}));
   const parsed = schema.safeParse(json);
   // Always respond OK to avoid email enumeration.
@@ -30,6 +32,7 @@ export async function POST(req: Request) {
     entity: "User",
     entityId: user.id,
   });
+  await saveStore();
 
   const origin = process.env.APP_URL?.replace(/\/$/, "") || new URL(req.url).origin;
   const path = `/reset-password?token=${encodeURIComponent(token)}`;
@@ -43,6 +46,7 @@ export async function POST(req: Request) {
       });
     } catch (error) {
       store.passwordResets.delete(token);
+      await saveStore();
       console.error("Password reset email failed", error);
     }
   }

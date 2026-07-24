@@ -95,7 +95,7 @@ export interface AuditLog {
   meta?: Record<string, unknown>; ip?: string; createdAt: string;
 }
 
-type Store = {
+export type Store = {
   institutes: Map<string, Institute>;
   users: Map<string, User>;
   refreshTokens: Map<string, { userId: string; createdAt: number }>;
@@ -258,6 +258,50 @@ function seed(): Store {
 }
 
 export const store: Store = g.__ledgerly_store ?? (g.__ledgerly_store = seed());
+
+type StoreState = Omit<Store, "receiptCounter" | "voucherCounter" | "auditLogs"> & {
+  receiptCounter: number;
+  voucherCounter: number;
+  auditLogs: AuditLog[];
+};
+
+const mapKeys: Array<keyof Omit<StoreState, "receiptCounter" | "voucherCounter" | "auditLogs">> = [
+  "institutes", "users", "refreshTokens", "passwordResets", "academicYears", "classes",
+  "batches", "students", "feeStructures", "feeAssignments", "feePayments",
+  "expenseCategories", "expenses", "accounts", "transactions",
+];
+
+export function exportStoreState(): Record<string, unknown> {
+  const state: Record<string, unknown> = {
+    receiptCounter: store.receiptCounter,
+    voucherCounter: store.voucherCounter,
+    auditLogs: store.auditLogs,
+  };
+  for (const key of mapKeys) {
+    const map = store[key] as Map<string, unknown>;
+    state[key] = Array.from(map.entries());
+  }
+  return state;
+}
+
+export function importStoreState(value: unknown): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const state = value as Record<string, unknown>;
+  for (const key of mapKeys) {
+    const entries = state[key];
+    if (Array.isArray(entries)) {
+      (store[key] as Map<string, unknown>).clear();
+      for (const entry of entries) {
+        if (Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string") {
+          (store[key] as Map<string, unknown>).set(entry[0], entry[1]);
+        }
+      }
+    }
+  }
+  if (typeof state.receiptCounter === "number") store.receiptCounter = state.receiptCounter;
+  if (typeof state.voucherCounter === "number") store.voucherCounter = state.voucherCounter;
+  if (Array.isArray(state.auditLogs)) store.auditLogs = state.auditLogs as AuditLog[];
+}
 
 export function findUserByEmail(email: string): User | undefined {
   for (const u of store.users.values()) if (u.email.toLowerCase() === email.toLowerCase()) return u;

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { pushAudit, store } from "@/lib/db/store";
+import { saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({
   currentPassword: z.string().min(1).max(200),
@@ -38,6 +39,7 @@ export async function POST(req: Request) {
     entity: "User",
     entityId: user.id,
   });
+  await saveStore();
 
   return NextResponse.json({ ok: true });
 }

@@ -12,6 +12,7 @@ import { isProd } from "@/lib/env";
 import { permissionsForRole, type Role } from "./rbac";
 import { store, type User } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { loadStore, saveStore } from "@/lib/db/persistence";
 
 const ACCESS_COOKIE = "lg_at";
 const REFRESH_COOKIE = "lg_rt";
@@ -40,6 +41,7 @@ export async function createSession(user: User) {
   jar.set(ACCESS_COOKIE, access, { ...baseCookieOpts, maxAge: ACCESS_TTL_SECONDS });
   jar.set(REFRESH_COOKIE, refresh, { ...baseCookieOpts, maxAge: REFRESH_TTL_SECONDS });
   jar.set(CSRF_COOKIE, uid("csrf"), { ...baseCookieOpts, httpOnly: false, maxAge: REFRESH_TTL_SECONDS });
+  await saveStore();
 }
 
 export async function destroySession() {
@@ -52,6 +54,7 @@ export async function destroySession() {
   jar.delete(ACCESS_COOKIE);
   jar.delete(REFRESH_COOKIE);
   jar.delete(CSRF_COOKIE);
+  await saveStore();
 }
 
 export async function rotateSession(): Promise<User | null> {
@@ -69,6 +72,7 @@ export async function rotateSession(): Promise<User | null> {
 }
 
 export async function getCurrentUser(): Promise<User | null> {
+  await loadStore();
   const jar = await cookies();
   const at = jar.get(ACCESS_COOKIE)?.value;
   if (at) {

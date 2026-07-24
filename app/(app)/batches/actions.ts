@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({
   name: z.string().min(1).max(40),
@@ -33,4 +34,5 @@ export async function createBatch(fd: FormData): Promise<{ error?: string } | vo
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "batch.create", entity: "Batch", entityId: id, meta: { name: parsed.data.name },
   });
+  await saveStore();
 }

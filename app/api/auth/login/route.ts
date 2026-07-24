@@ -3,6 +3,7 @@ import { z } from "zod";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 import { findUserByEmail, pushAudit } from "@/lib/db/store";
+import { loadStore, saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({
   email: z.string().email().max(200),
@@ -13,6 +14,7 @@ const LOCK_THRESHOLD = 5;
 const LOCK_MS = 15 * 60 * 1000;
 
 export async function POST(req: Request) {
+  await loadStore();
   const json = await req.json().catch(() => ({}));
   const parsed = schema.safeParse(json);
   if (!parsed.success) return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
@@ -44,6 +46,7 @@ export async function POST(req: Request) {
       entityId: user.id,
       ip: ip ?? undefined,
     });
+    await saveStore();
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
@@ -59,5 +62,6 @@ export async function POST(req: Request) {
     entityId: user.id,
     ip: ip ?? undefined,
   });
+  await saveStore();
   return NextResponse.json({ ok: true });
 }

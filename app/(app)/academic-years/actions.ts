@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({
   name: z.string().min(2).max(20),
@@ -42,4 +43,5 @@ export async function createAcademicYear(fd: FormData): Promise<{ error?: string
     action: "academic_year.create", entity: "AcademicYear", entityId: id,
     meta: { name: parsed.data.name },
   });
+  await saveStore();
 }

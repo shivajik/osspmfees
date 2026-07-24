@@ -5,6 +5,7 @@ import { PERMISSIONS, ROLES, hasPermission, permissionsForRole } from "@/lib/aut
 import { pushAudit, store, findUserByEmail } from "@/lib/db/store";
 import { hashPassword } from "@/lib/auth/password";
 import { uid } from "@/lib/utils";
+import { saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({
   name: z.string().min(2).max(120),
@@ -43,7 +44,7 @@ export async function createUser(fd: FormData): Promise<{ error?: string } | voi
     email,
     passwordHash: await hashPassword(password),
     role,
-    instituteId: role === ROLES.SUPER_ADMIN ? null : instituteId!,
+    instituteId: role === ROLES.SUPER_ADMIN ? null : instituteId ?? null,
     active: true,
     failedLoginCount: 0,
     lockedUntil: null,
@@ -60,4 +61,5 @@ export async function createUser(fd: FormData): Promise<{ error?: string } | voi
     entityId: id,
     meta: { role, email },
   });
+  await saveStore();
 }

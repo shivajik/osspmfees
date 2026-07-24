@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { saveStore } from "@/lib/db/persistence";
 
 const schema = z.object({
   name: z.string().min(2).max(120),
@@ -39,4 +40,5 @@ export async function createAccount(fd: FormData): Promise<{ error?: string } | 
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "account.create", entity: "Account", entityId: id, meta: { name: d.name, type: d.type },
   });
+  await saveStore();
 }
