@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { findUserByEmail, pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
+import { isEmailConfigured, sendPasswordResetEmail } from "@/lib/email/mailer";
 
 const schema = z.object({ email: z.string().email().max(200) });
 
@@ -30,7 +31,23 @@ export async function POST(req: Request) {
     entityId: user.id,
   });
 
-  // In production, email this link. In preview we return it for demo purposes.
-  const link = `/reset-password?token=${token}`;
-  return NextResponse.json({ ok: true, previewLink: link });
+  const origin = process.env.APP_URL?.replace(/\/$/, "") || new URL(req.url).origin;
+  const path = `/reset-password?token=${encodeURIComponent(token)}`;
+
+  if (isEmailConfigured()) {
+    try {
+      await sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        resetUrl: `${origin}${path}`,
+      });
+    } catch (error) {
+      store.passwordResets.delete(token);
+      console.error("Password reset email failed", error);
+    }
+  }
+
+  // Keep local development usable before SMTP credentials are configured.
+  const previewLink = process.env.NODE_ENV !== "production" && !isEmailConfigured() ? path : undefined;
+  return NextResponse.json({ ok: true, previewLink });
 }

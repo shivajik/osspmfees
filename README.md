@@ -9,7 +9,7 @@ Multi-tenant SaaS for institute **fees collection & expense tracking**. Built on
 ```bash
 bun install
 cp .env.example .env
-# fill in JWT_SECRET, JWT_REFRESH_SECRET, DATABASE_URL, DIRECT_URL
+# fill in JWT secrets and Gmail SMTP settings
 bun run dev
 ```
 
@@ -30,6 +30,10 @@ The preview uses an in-memory store (`lib/db/store.ts`) so it runs without a DB.
 1. Import the repo into Vercel.
 2. Set env vars from `.env.example`.
 3. Deploy — everything is serverless-safe (no filesystem writes, no long-running processes).
+
+For password-reset emails, set `GOOGLE_EMAIL` to the Gmail sender address and
+`GOOGLE_APP_PASSWORD` to its 16-character Google App Password. Also set
+`APP_URL` to the deployed HTTPS URL so reset links point to production.
 
 ## Docs
 

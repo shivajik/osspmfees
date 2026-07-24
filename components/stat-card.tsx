@@ -21,14 +21,14 @@ export function StatCard({
     info: "bg-sky-50 text-sky-600",
   } as const;
   return (
-    <div className="card relative overflow-hidden">
-      <div className="flex items-start justify-between">
-        <div>
+    <div className="card relative min-h-28 overflow-hidden p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 pt-0.5">
           <p className="text-xs font-medium uppercase tracking-wider text-[var(--color-fg-muted)]">{label}</p>
           <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
           {hint && <p className="mt-1 text-xs text-[var(--color-fg-subtle)]">{hint}</p>}
         </div>
-        <div className={cn("grid h-9 w-9 place-items-center rounded-lg", iconTones[tone])}>
+        <div className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", iconTones[tone])}>
           <Icon className="h-4 w-4" />
         </div>
       </div>

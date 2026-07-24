@@ -42,7 +42,7 @@ export default function ForgotPasswordPage() {
           {msg && <p className="rounded-md bg-emerald-50 p-2 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">{msg}</p>}
           {preview && (
             <p className="text-xs text-[var(--color-fg-muted)]">
-              Preview link (demo, no email service):{" "}
+              Local preview link (SMTP is not configured):{" "}
               <Link href={preview} className="text-indigo-600 underline">{preview}</Link>
             </p>
           )}
