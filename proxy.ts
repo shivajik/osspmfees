@@ -29,7 +29,7 @@ function rateLimit(ip: string): boolean {
   return true;
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Security headers on everything.
