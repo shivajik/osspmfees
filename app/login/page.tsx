@@ -2,8 +2,8 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input, Field } from "@/components/ui/input";
-import { Loader2 } from "lucide-react";
+import { Input, Field, Select } from "@/components/ui/input";
+import { Building2, GraduationCap, Loader2, ShieldCheck, Wallet } from "lucide-react";
 
 export default function LoginPage() {
   return (
@@ -13,28 +13,41 @@ export default function LoginPage() {
   );
 }
 
-const demo = [
-  { email: "super@ledgerly.app", label: "Super Admin" },
-  { email: "admin@greenwood.edu", label: "Institute Admin" },
-  { email: "accountant@greenwood.edu", label: "Accountant" },
-  { email: "cashier@greenwood.edu", label: "Cashier" },
-  { email: "viewer@greenwood.edu", label: "Viewer" },
+const branches = [
+  { code: "VGGSS", name: "Late. Vimalbai G. Gaikwad Secondary School" },
+  { code: "KDSS", name: "Late. Kishanrao Dhanve Secondary School" },
+  { code: "SSR", name: "Secondary School, Rui" },
+  { code: "SSSS", name: "Shree Shaneshwar Secondary School" },
+  { code: "OBM", name: "Om Balak Mandir" },
+  { code: "OSS", name: "Om Secondary School" },
+  { code: "GPES", name: "Late. Gangadhar Patil English School" },
+  { code: "SESR", name: "Sai English School, Rui" },
+  { code: "THS", name: "The Tesla High School" },
+  { code: "VGHSS", name: "Late. Vimalbai G. Gaikwad Sec & Higher Secondary School" },
+  { code: "AJC", name: "Adarsh Junior College" },
+  { code: "SSHSS", name: "Shree Shaneshwar Higher Secondary School" },
+];
+
+const roleOptions = [
+  { role: "admin", label: "Admin" },
+  { role: "accountant", label: "Accountant" },
+  { role: "cashier", label: "Cashier" },
 ];
 
 function LoginInner() {
-  const demo = [
-    { email: "super@ledgerly.app", label: "Super Admin" },
-    { email: "admin@greenwood.edu", label: "Institute Admin" },
-    { email: "accountant@greenwood.edu", label: "Accountant" },
-    { email: "cashier@greenwood.edu", label: "Cashier" },
-    { email: "viewer@greenwood.edu", label: "Viewer" },
-  ];
   const router = useRouter();
   const params = useSearchParams();
-  const [email, setEmail] = useState("super@ledgerly.app");
+  const [email, setEmail] = useState("super@osspmandal.com");
   const [password, setPassword] = useState("Password123!");
+  const [selectedBranch, setSelectedBranch] = useState(branches[0]?.code ?? "VGGSS");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function useAccount(nextEmail: string) {
+    setEmail(nextEmail);
+    setPassword("Password123!");
+    setError(null);
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -59,30 +72,58 @@ function LoginInner() {
   }
 
   return (
-    <div className="min-h-dvh grid lg:grid-cols-2">
+    <div className="min-h-dvh grid lg:grid-cols-[1.08fr_0.92fr]">
       <div className="hidden lg:flex flex-col justify-between border-r border-[var(--color-border)] bg-[var(--color-surface)] p-10">
         <div className="flex items-center gap-2">
-          <div className="grid h-8 w-8 place-items-center rounded-md bg-gradient-to-br from-indigo-600 to-sky-500 text-sm font-bold text-white">L</div>
-          <span className="text-sm font-semibold tracking-tight">Ledgerly</span>
-        </div>
-        <div className="max-w-md">
-          <h2 className="text-3xl font-semibold tracking-tight">Run your institute&apos;s books with confidence.</h2>
-          <p className="mt-3 text-sm text-[var(--color-fg-muted)]">
-            Multi-tenant fee collection, expense tracking, cash & bank ledgers, and beautiful reports — all from one dashboard.
-          </p>
-          <div className="mt-8 grid grid-cols-3 gap-3 text-xs text-[var(--color-fg-muted)]">
-            <div className="card p-3"><div className="text-lg font-semibold text-[var(--color-fg)]">SOC-ready</div>audit trail</div>
-            <div className="card p-3"><div className="text-lg font-semibold text-[var(--color-fg)]">Tenant</div>isolation</div>
-            <div className="card p-3"><div className="text-lg font-semibold text-[var(--color-fg)]">RBAC</div>5 roles</div>
+          <div className="grid h-8 w-8 place-items-center rounded-md bg-[var(--color-brand)] text-sm font-bold text-[var(--color-brand-fg)]">O</div>
+          <div className="flex flex-col leading-tight">
+            <span className="text-sm font-semibold tracking-tight">OSSPM Ledgerly</span>
+            <span className="text-[10px] uppercase tracking-widest text-[var(--color-fg-subtle)]">Fee & expense system</span>
           </div>
         </div>
-        <p className="text-xs text-[var(--color-fg-subtle)]">© {new Date().getFullYear()} Ledgerly. All rights reserved.</p>
+        <div className="max-w-xl">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-[var(--color-brand)]">Om Shivkrupa Shikshan Prasarak Mandal</p>
+          <h2 className="text-4xl font-semibold tracking-tight">Centralized accounts for every OSSPM branch.</h2>
+          <p className="mt-3 text-sm text-[var(--color-fg-muted)]">
+            Manage branch-wise fee collection, expenses, cash & bank ledgers, users, audit logs, and reports with role-based access.
+          </p>
+          <div className="mt-8 grid grid-cols-2 gap-3 text-xs text-[var(--color-fg-muted)]">
+            <div className="card p-4">
+              <Building2 className="mb-3 h-5 w-5 text-[var(--color-brand)]" />
+              <div className="text-lg font-semibold text-[var(--color-fg)]">12 branches</div>
+              OSSPM institutes seeded from the branch list
+            </div>
+            <div className="card p-4">
+              <ShieldCheck className="mb-3 h-5 w-5 text-[var(--color-brand)]" />
+              <div className="text-lg font-semibold text-[var(--color-fg)]">Role access</div>
+              Super admin, branch admin, accountant, cashier
+            </div>
+            <div className="card p-4">
+              <Wallet className="mb-3 h-5 w-5 text-[var(--color-brand)]" />
+              <div className="text-lg font-semibold text-[var(--color-fg)]">Cash ledger</div>
+              Opening account ready for each branch
+            </div>
+            <div className="card p-4">
+              <GraduationCap className="mb-3 h-5 w-5 text-[var(--color-brand)]" />
+              <div className="text-lg font-semibold text-[var(--color-fg)]">2025-26</div>
+              Active academic year configured
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-[var(--color-fg-subtle)]">© {new Date().getFullYear()} OSSPM Mandal. All rights reserved.</p>
       </div>
 
       <div className="flex items-center justify-center p-6 sm:p-10">
-        <div className="w-full max-w-sm">
-          <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
-          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">Use a demo account below or your own credentials.</p>
+        <div className="w-full max-w-md">
+          <div className="mb-8 flex items-center gap-2 lg:hidden">
+            <div className="grid h-9 w-9 place-items-center rounded-md bg-[var(--color-brand)] text-sm font-bold text-[var(--color-brand-fg)]">O</div>
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold tracking-tight">OSSPM Ledgerly</span>
+              <span className="text-[10px] uppercase tracking-widest text-[var(--color-fg-subtle)]">Fee & expense system</span>
+            </div>
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">Use the OSSPM seeded accounts below or your own credentials.</p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <Field label="Email" htmlFor="email">
@@ -91,7 +132,7 @@ function LoginInner() {
             <Field label="Password" htmlFor="password">
               <Input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </Field>
-            {error && <p className="text-xs text-red-600">{error}</p>}
+            {error && <p className="text-xs text-[var(--color-danger)]">{error}</p>}
             <Button type="submit" disabled={loading} className="w-full">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Sign in
@@ -101,22 +142,51 @@ function LoginInner() {
             </p>
           </form>
 
-          <div className="mt-6">
-            <p className="text-[11px] font-medium uppercase tracking-widest text-[var(--color-fg-subtle)]">Demo accounts</p>
-            <div className="mt-2 grid grid-cols-1 gap-1 text-xs">
-              {demo.map((d) => (
-                <button
-                  key={d.email}
-                  type="button"
-                  onClick={() => { setEmail(d.email); setPassword("Password123!"); }}
-                  className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left hover:border-[var(--color-border-strong)]"
-                >
-                  <span className="text-[var(--color-fg)]">{d.label}</span>
-                  <span className="text-[var(--color-fg-muted)]">{d.email}</span>
-                </button>
-              ))}
+          <div className="mt-6 space-y-4">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-widest text-[var(--color-fg-subtle)]">Quick access</p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-2 w-full justify-between text-xs"
+                onClick={() => useAccount("super@osspmandal.com")}
+              >
+                <span>OSSPM Super Admin</span>
+                <span className="font-normal text-[var(--color-fg-muted)]">super@osspmandal.com</span>
+              </Button>
             </div>
-            <p className="mt-2 text-[11px] text-[var(--color-fg-subtle)]">Password for all demo accounts: Password123!</p>
+
+            <div className="card p-3">
+              <Field label="Branch demo account" htmlFor="branch">
+                <Select id="branch" value={selectedBranch} onChange={(event) => setSelectedBranch(event.target.value)}>
+                  {branches.map((branch) => (
+                    <option key={branch.code} value={branch.code}>{branch.code} — {branch.name}</option>
+                  ))}
+                </Select>
+              </Field>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {roleOptions.map((option) => {
+                  const branchSlug = selectedBranch.toLowerCase();
+                  return (
+                    <Button
+                      key={option.role}
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="px-2 text-[11px]"
+                      onClick={() => useAccount(`${option.role}.${branchSlug}@osspmandal.com`)}
+                    >
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              </div>
+              <p className="mt-3 break-all text-[11px] text-[var(--color-fg-subtle)]">
+                Selected email pattern: admin/accountant/cashier.&lt;branch-code&gt;@osspmandal.com
+              </p>
+            </div>
+
+            <p className="text-[11px] text-[var(--color-fg-subtle)]">Password for every seeded account: Password123!</p>
           </div>
         </div>
       </div>
