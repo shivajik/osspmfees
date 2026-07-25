@@ -135,117 +135,64 @@ function seed(): Store {
   const accounts = new Map<string, Account>();
   const transactions = new Map<string, Transaction>();
 
-  const inst1: Institute = {
-    id: "inst_greenwood", name: "Greenwood Public School", code: "GPS",
-    address: "12 Park Ave, Bengaluru", phone: "+91 80 4000 1000", email: "office@greenwood.edu",
-    status: "ACTIVE", createdAt: now, updatedAt: now,
-  };
-  const inst2: Institute = {
-    id: "inst_northstar", name: "Northstar Academy", code: "NSA",
-    address: "9 Ring Road, Pune", phone: "+91 20 4000 2000", email: "hello@northstar.edu",
-    status: "ACTIVE", createdAt: now, updatedAt: now,
-  };
-  institutes.set(inst1.id, inst1);
-  institutes.set(inst2.id, inst2);
-
   const pw = hashSync("Password123!", 10);
+
+  // OSSPM Mandal — Om Shivkrupa Shikshan Prasarak Mandal branches
+  // Source: https://www.osspmandal.com/branches
+  const osspmBranches: Array<{ code: string; name: string; address: string }> = [
+    { code: "VGGSS", name: "Late. Vimalbai G. Gaikwad Secondary School", address: "Gaikwad Jalgaon, Tq. Shevgaon, Dist. Ahilyanagar" },
+    { code: "KDSS",  name: "Late. Kishanrao Dhanve Secondary School",   address: "Bharadi, Tq. Ambad, Dist. Jalna" },
+    { code: "SSR",   name: "Secondary School, Rui",                     address: "Rui, Tq. Ambad, Dist. Jalna" },
+    { code: "SSSS",  name: "Shree Shaneshwar Secondary School",         address: "Limbe Jalgaon, Tq. Gangapur, Dist. Chhatrapati Sambhajinagar" },
+    { code: "OBM",   name: "Om Balak Mandir",                           address: "Sahakar Nagar, Chhatrapati Sambhajinagar" },
+    { code: "OSS",   name: "Om Secondary School",                       address: "Sahakar Nagar, Chhatrapati Sambhajinagar" },
+    { code: "GPES",  name: "Late. Gangadhar Patil English School",      address: "Gaikwad Jalgaon, Tq. Shevgaon, Dist. Ahilyanagar" },
+    { code: "SESR",  name: "Sai English School, Rui",                   address: "Rui, Tq. Ambad, Dist. Jalna" },
+    { code: "THS",   name: "The Tesla High School",                     address: "Deolai Area, Chhatrapati Sambhajinagar" },
+    { code: "VGHSS", name: "Late. Vimalbai G. Gaikwad Sec & Higher Secondary School", address: "Gaikwad Jalgaon, Tq. Shevgaon, Dist. Ahilyanagar" },
+    { code: "AJC",   name: "Adarsh Junior College",                     address: "Gaikwad Jalgaon, Tq. Shevgaon, Dist. Ahilyanagar" },
+    { code: "SSHSS", name: "Shree Shaneshwar Higher Secondary School",  address: "Limbe Jalgaon, Tq. Gangapur, Dist. Chhatrapati Sambhajinagar" },
+  ];
+
   const mk = (email: string, name: string, role: Role, instituteId: string | null): User => ({
-    // Deterministic ID so JWT `sub` stays valid across serverless instances (in-memory store re-seeds per cold start).
     id: `usr_${email.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`,
     email, name, passwordHash: pw, role, instituteId,
     active: true, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now,
   });
 
-  const seedUsers: User[] = [
-    mk("super@ledgerly.app", "Super Admin", ROLES.SUPER_ADMIN, null),
-    mk("admin@greenwood.edu", "Greenwood Admin", ROLES.INSTITUTE_ADMIN, inst1.id),
-    mk("accountant@greenwood.edu", "Greenwood Accountant", ROLES.ACCOUNTANT, inst1.id),
-    mk("cashier@greenwood.edu", "Greenwood Cashier", ROLES.CASHIER, inst1.id),
-    mk("viewer@greenwood.edu", "Greenwood Viewer", ROLES.VIEWER, inst1.id),
-    mk("admin@northstar.edu", "Northstar Admin", ROLES.INSTITUTE_ADMIN, inst2.id),
-  ];
-  seedUsers.forEach((u) => users.set(u.id, u));
+  // Super admin for OSSPM Mandal
+  const superUser = mk("super@osspmandal.com", "OSSPM Super Admin", ROLES.SUPER_ADMIN, null);
+  users.set(superUser.id, superUser);
 
-  const ay: AcademicYear = {
-    id: "ay_gw_2526", instituteId: inst1.id, name: "2025-26",
-    startDate: "2025-06-01", endDate: "2026-05-31", isActive: true, createdAt: now,
-  };
-  academicYears.set(ay.id, ay);
+  for (const b of osspmBranches) {
+    const id = `inst_${b.code.toLowerCase()}`;
+    institutes.set(id, {
+      id, name: b.name, code: b.code,
+      address: b.address, email: `${b.code.toLowerCase()}@osspmandal.com`,
+      phone: undefined,
+      status: "ACTIVE", createdAt: now, updatedAt: now,
+    });
 
-  const classesSeed: ClassRecord[] = [
-    { id: "cls_gw_9", instituteId: inst1.id, name: "Grade 9", code: "9", createdAt: now },
-    { id: "cls_gw_10", instituteId: inst1.id, name: "Grade 10", code: "10", createdAt: now },
-    { id: "cls_gw_11", instituteId: inst1.id, name: "Grade 11", code: "11", createdAt: now },
-  ];
-  classesSeed.forEach((c) => classes.set(c.id, c));
+    const slug = b.code.toLowerCase();
+    const branchUsers: User[] = [
+      mk(`admin.${slug}@osspmandal.com`,      `${b.name} — Admin`,      ROLES.INSTITUTE_ADMIN, id),
+      mk(`accountant.${slug}@osspmandal.com`, `${b.name} — Accountant`, ROLES.ACCOUNTANT,      id),
+      mk(`cashier.${slug}@osspmandal.com`,    `${b.name} — Cashier`,    ROLES.CASHIER,         id),
+    ];
+    branchUsers.forEach((u) => users.set(u.id, u));
 
-  const batchesSeed: Batch[] = [
-    { id: "bt_9a", instituteId: inst1.id, classId: "cls_gw_9", academicYearId: ay.id, name: "9-A", createdAt: now },
-    { id: "bt_10a", instituteId: inst1.id, classId: "cls_gw_10", academicYearId: ay.id, name: "10-A", createdAt: now },
-    { id: "bt_10b", instituteId: inst1.id, classId: "cls_gw_10", academicYearId: ay.id, name: "10-B", createdAt: now },
-  ];
-  batchesSeed.forEach((b) => batches.set(b.id, b));
-
-  // Fee structures per class
-  const structures: FeeStructure[] = [
-    { id: "fs_gw_9", instituteId: inst1.id, academicYearId: ay.id, classId: "cls_gw_9",
-      name: "Grade 9 Annual Fees", totalAmount: 45000,
-      items: [{ head: "Tuition", amount: 30000 }, { head: "Development", amount: 8000 }, { head: "Exam", amount: 4000 }, { head: "Library", amount: 3000 }],
-      createdAt: now },
-    { id: "fs_gw_10", instituteId: inst1.id, academicYearId: ay.id, classId: "cls_gw_10",
-      name: "Grade 10 Annual Fees", totalAmount: 52000,
-      items: [{ head: "Tuition", amount: 35000 }, { head: "Development", amount: 9000 }, { head: "Exam", amount: 5000 }, { head: "Library", amount: 3000 }],
-      createdAt: now },
-    { id: "fs_gw_11", instituteId: inst1.id, academicYearId: ay.id, classId: "cls_gw_11",
-      name: "Grade 11 Annual Fees", totalAmount: 62000,
-      items: [{ head: "Tuition", amount: 44000 }, { head: "Lab", amount: 10000 }, { head: "Exam", amount: 5000 }, { head: "Library", amount: 3000 }],
-      createdAt: now },
-  ];
-  structures.forEach((s) => feeStructures.set(s.id, s));
-
-  // Accounts
-  const acctBank: Account = {
-    id: "ac_gw_bank", instituteId: inst1.id, name: "HDFC Current",
-    type: "BANK", bankName: "HDFC Bank", accountNo: "50100XXXXXX", ifsc: "HDFC0000123",
-    openingBal: 500000, currentBal: 500000, createdAt: now,
-  };
-  const acctCash: Account = {
-    id: "ac_gw_cash", instituteId: inst1.id, name: "Cash in Hand",
-    type: "CASH", openingBal: 25000, currentBal: 25000, createdAt: now,
-  };
-  accounts.set(acctBank.id, acctBank);
-  accounts.set(acctCash.id, acctCash);
-
-  // Expense categories
-  const cats: ExpenseCategory[] = [
-    { id: "ec_salary", instituteId: inst1.id, name: "Salaries", createdAt: now },
-    { id: "ec_utils", instituteId: inst1.id, name: "Utilities", createdAt: now },
-    { id: "ec_maint", instituteId: inst1.id, name: "Maintenance", createdAt: now },
-    { id: "ec_sup", instituteId: inst1.id, name: "Supplies", createdAt: now },
-  ];
-  cats.forEach((c) => expenseCategories.set(c.id, c));
-
-  // Students + auto assignments
-  const names = ["Aarav Sharma", "Isha Patel", "Kabir Singh", "Meera Reddy", "Rohan Iyer", "Sara Kapoor", "Vivaan Mehta", "Zara Khan"];
-  names.forEach((n, i) => {
-    const classId = i % 2 === 0 ? "cls_gw_10" : "cls_gw_9";
-    const batchId = i % 2 === 0 ? "bt_10a" : "bt_9a";
-    const s: Student = {
-      id: uid("stu"), instituteId: inst1.id,
-      admissionNo: `GPS-${2500 + i}`, name: n,
-      guardianName: n.split(" ")[1] ? `Mr. ${n.split(" ")[1]}` : undefined,
-      phone: `+9199000${(10000 + i).toString().slice(-5)}`,
-      email: `${n.toLowerCase().replace(/\s+/g, ".")}@greenwood.edu`,
-      classId, batchId, academicYearId: ay.id, status: "ACTIVE", createdAt: now,
-    };
-    students.set(s.id, s);
-    const fs = classId === "cls_gw_10" ? structures[1] : structures[0];
-    const assn: FeeAssignment = {
-      id: uid("fa"), instituteId: inst1.id, studentId: s.id, feeStructureId: fs.id,
-      discount: 0, totalPayable: fs.totalAmount, totalPaid: 0, status: "PENDING", createdAt: now,
-    };
-    feeAssignments.set(assn.id, assn);
-  });
+    // Minimal per-institute scaffolding: an active academic year + a cash account
+    const ayId = `ay_${slug}_2526`;
+    academicYears.set(ayId, {
+      id: ayId, instituteId: id, name: "2025-26",
+      startDate: "2025-06-01", endDate: "2026-05-31", isActive: true, createdAt: now,
+    });
+    const cashId = `ac_${slug}_cash`;
+    accounts.set(cashId, {
+      id: cashId, instituteId: id, name: "Cash in Hand",
+      type: "CASH", openingBal: 0, currentBal: 0, createdAt: now,
+    });
+  }
 
   return {
     institutes, users, refreshTokens: new Map(), passwordResets: new Map(),
