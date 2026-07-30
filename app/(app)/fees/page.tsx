@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { CollectFeeButton, NewStructureButton } from "./_actions";
+import { AssignFeesButton, CollectFeeButton, NewStructureButton } from "./_actions";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListToolbar } from "@/components/list-toolbar";
@@ -59,6 +59,17 @@ export default async function FeesPage({
         actions={
           <div className="flex gap-2">
             {canWriteStructure && (
+              <AssignFeesButton
+                structures={structures.map((fs) => ({
+                  id: fs.id,
+                  name: fs.name,
+                  className: store.classes.get(fs.classId)?.name ?? "—",
+                  yearName: store.academicYears.get(fs.academicYearId)?.name ?? "—",
+                  totalAmount: fs.totalAmount,
+                }))}
+              />
+            )}
+            {canWriteStructure && (
               <NewStructureButton
                 classes={classes.map((c) => ({ id: c.id, name: c.name }))}
                 years={years.map((y) => ({ id: y.id, name: y.name }))}
@@ -82,6 +93,17 @@ export default async function FeesPage({
           <p className="text-2xl font-semibold text-amber-600">{formatCurrency(totalOutstanding)}</p>
         </Card>
       </div>
+
+      {allAssignments.length === 0 && (
+        <Card className="mb-6">
+          <CardHeader><div><CardTitle>How fee collection works</CardTitle><CardDescription>Three steps before you can collect a payment</CardDescription></div></CardHeader>
+          <ol className="list-decimal space-y-1 pl-5 text-sm text-[var(--color-fg-muted)]">
+            <li><span className="font-medium text-[var(--color-fg)]">Create a fee structure</span> for a class + academic year (Institute Admin).</li>
+            <li><span className="font-medium text-[var(--color-fg)]">Assign fees</span> to students with the “Assign fees” button — this creates one assignment per active student (Institute Admin).</li>
+            <li><span className="font-medium text-[var(--color-fg)]">Collect</span> full or partial payments from the Assignments table below (Institute Admin, Accountant, Cashier).</li>
+          </ol>
+        </Card>
+      )}
 
       <div className="mb-2 text-sm font-medium">Assignments</div>
       <ListToolbar

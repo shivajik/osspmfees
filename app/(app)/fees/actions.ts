@@ -108,3 +108,55 @@ export async function createStructure(fd: FormData): Promise<{ error?: string } 
   });
   await saveStore();
 }
+
+const assignSchema = z.object({
+  feeStructureId: z.string().min(1),
+  discount: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+});
+
+export async function assignFees(fd: FormData): Promise<{ error?: string; created?: number }> {
+  const user = await requireUser();
+  const perms = permissionsForRole(user.role);
+  if (!hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE)) return { error: "Not authorized" };
+  if (!user.instituteId) return { error: "Institute scope required" };
+
+  const parsed = assignSchema.safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const { feeStructureId, discount } = parsed.data;
+
+  const fs = store.feeStructures.get(feeStructureId);
+  if (!fs || fs.instituteId !== user.instituteId) return { error: "Fee structure not found" };
+
+  const existing = new Set(
+    Array.from(store.feeAssignments.values())
+      .filter((a) => a.instituteId === user.instituteId && a.feeStructureId === fs.id)
+      .map((a) => a.studentId),
+  );
+
+  const totalPayable = Math.max(0, fs.totalAmount - discount);
+  const now = new Date().toISOString();
+  let created = 0;
+
+  for (const s of store.students.values()) {
+    if (s.instituteId !== user.instituteId) continue;
+    if (s.status !== "ACTIVE") continue;
+    if (s.classId !== fs.classId || s.academicYearId !== fs.academicYearId) continue;
+    if (existing.has(s.id)) continue;
+    const aid = uid("fa");
+    store.feeAssignments.set(aid, {
+      id: aid, instituteId: user.instituteId, studentId: s.id, feeStructureId: fs.id,
+      discount, totalPayable, totalPaid: 0, status: "PENDING", createdAt: now,
+    });
+    created++;
+  }
+
+  if (created === 0) return { error: "No eligible students found for this structure's class and academic year" };
+
+  pushAudit({
+    instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
+    action: "fee_assignment.bulk_create", entity: "FeeStructure", entityId: fs.id,
+    meta: { created, discount },
+  });
+  await saveStore();
+  return { created };
+}
