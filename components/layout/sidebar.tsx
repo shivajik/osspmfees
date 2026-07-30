@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Building2, Users, GraduationCap, School, CalendarRange,
-  ReceiptText, Wallet, Landmark, FileBarChart2, Settings, ShieldCheck, BookOpen,
+  ReceiptText, HandCoins, Wallet, Landmark, FileBarChart2, Settings, ShieldCheck, BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PERMISSIONS, ROLES, hasPermission, type Permission } from "@/lib/auth/rbac";
@@ -42,6 +42,7 @@ const groups: { label: string; items: NavItem[] }[] = [
     label: "Finance",
     items: [
       { href: "/fees", label: "Fees", icon: ReceiptText, needs: PERMISSIONS.FEE_READ },
+      { href: "/fees/collect", label: "Collect fees", icon: HandCoins, needs: PERMISSIONS.FEE_COLLECT },
       { href: "/expenses", label: "Expenses", icon: Wallet, needs: PERMISSIONS.EXPENSE_READ },
       { href: "/accounts", label: "Bank & cash", icon: Landmark, needs: PERMISSIONS.BANK_READ },
       { href: "/reports", label: "Reports", icon: FileBarChart2, needs: PERMISSIONS.REPORT_VIEW },
@@ -80,7 +81,7 @@ export function Sidebar({ role, permissions }: { role: string; permissions: stri
               </div>
               <ul className="space-y-0.5">
                 {visible.map((it) => {
-                  const active = pathname === it.href || pathname.startsWith(it.href + "/");
+                  const active = pathname === it.href || (pathname.startsWith(it.href + "/") && !visible.some((o) => o !== it && o.href.startsWith(it.href + "/") && (pathname === o.href || pathname.startsWith(o.href + "/"))));
                   const Icon = it.icon;
                   return (
                     <li key={it.href}>

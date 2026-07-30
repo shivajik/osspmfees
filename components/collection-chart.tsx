@@ -21,7 +21,7 @@ export function CollectionChart({ data }: { data: { label: string; value: number
               borderRadius: 8,
               fontSize: 12,
             }}
-            formatter={(v) => [`₹ ${Number(v).toLocaleString("en-IN")}`, "Collected"]}
+            formatter={(v: unknown) => [`₹ ${Number(v).toLocaleString("en-IN")}`, "Collected"]}
           />
           <Area type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} fill="url(#gradCollection)" />
         </AreaChart>
