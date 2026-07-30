@@ -112,6 +112,7 @@ export async function createStructure(fd: FormData): Promise<{ error?: string } 
 const assignSchema = z.object({
   feeStructureId: z.string().min(1),
   discount: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+  studentId: z.string().optional().or(z.literal("")),
 });
 
 export async function assignFees(fd: FormData): Promise<{ error?: string; created?: number }> {
@@ -122,7 +123,7 @@ export async function assignFees(fd: FormData): Promise<{ error?: string; create
 
   const parsed = assignSchema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
-  const { feeStructureId, discount } = parsed.data;
+  const { feeStructureId, discount, studentId } = parsed.data;
 
   const fs = store.feeStructures.get(feeStructureId);
   if (!fs || fs.instituteId !== user.instituteId) return { error: "Fee structure not found" };
@@ -137,26 +138,52 @@ export async function assignFees(fd: FormData): Promise<{ error?: string; create
   const now = new Date().toISOString();
   let created = 0;
 
-  for (const s of store.students.values()) {
-    if (s.instituteId !== user.instituteId) continue;
-    if (s.status !== "ACTIVE") continue;
-    if (s.classId !== fs.classId || s.academicYearId !== fs.academicYearId) continue;
-    if (existing.has(s.id)) continue;
+  // Single-student mode: assign regardless of class/year match (manual override).
+  if (studentId) {
+    const s = store.students.get(studentId);
+    if (!s || s.instituteId !== user.instituteId) return { error: "Student not found" };
+    if (existing.has(s.id)) return { error: "This student already has this fee structure assigned" };
     const aid = uid("fa");
     store.feeAssignments.set(aid, {
       id: aid, instituteId: user.instituteId, studentId: s.id, feeStructureId: fs.id,
       discount, totalPayable, totalPaid: 0, status: "PENDING", createdAt: now,
     });
-    created++;
+    created = 1;
+  } else {
+    for (const s of store.students.values()) {
+      if (s.instituteId !== user.instituteId) continue;
+      if (s.status !== "ACTIVE") continue;
+      if (s.classId !== fs.classId || s.academicYearId !== fs.academicYearId) continue;
+      if (existing.has(s.id)) continue;
+      const aid = uid("fa");
+      store.feeAssignments.set(aid, {
+        id: aid, instituteId: user.instituteId, studentId: s.id, feeStructureId: fs.id,
+        discount, totalPayable, totalPaid: 0, status: "PENDING", createdAt: now,
+      });
+      created++;
+    }
   }
 
-  if (created === 0) return { error: "No eligible students found for this structure's class and academic year" };
+  if (created === 0) {
+    const inClass = Array.from(store.students.values()).filter(
+      (s) => s.instituteId === user.instituteId && s.classId === fs.classId && s.status === "ACTIVE",
+    );
+    const matching = inClass.filter((s) => s.academicYearId === fs.academicYearId);
+    if (inClass.length === 0) {
+      return { error: "No active students in this structure's class. Add students to that class, or use “One student” mode below." };
+    }
+    if (matching.length === 0) {
+      return { error: `${inClass.length} active student(s) are in this class but belong to a different academic year. Use “One student” mode to assign manually.` };
+    }
+    return { error: "All eligible students already have this fee structure assigned." };
+  }
 
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "fee_assignment.bulk_create", entity: "FeeStructure", entityId: fs.id,
-    meta: { created, discount },
+    meta: { created, discount, studentId: studentId || null },
   });
   await saveStore();
   return { created };
 }
+

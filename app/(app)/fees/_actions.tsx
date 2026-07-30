@@ -137,30 +137,42 @@ export function CollectFeeButton({
 }
 
 export function AssignFeesButton({
-  structures,
-}: { structures: { id: string; name: string; className: string; yearName: string; totalAmount: number }[] }) {
+  structures, students, label = "Assign fees",
+}: {
+  structures: { id: string; name: string; className: string; yearName: string; totalAmount: number }[];
+  students: { id: string; name: string; admissionNo: string; className: string }[];
+  label?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<number | null>(null);
+  const [scope, setScope] = useState<"CLASS" | "ONE">("CLASS");
   const router = useRouter();
+
+  const noStructures = structures.length === 0;
 
   return (
     <>
-      <Button variant="secondary" onClick={() => setOpen(true)} disabled={structures.length === 0}>
-        <Users className="h-4 w-4" />Assign fees
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        <Users className="h-4 w-4" />{label}
       </Button>
       <Modal
-        open={open} onClose={() => { setOpen(false); setDone(null); }}
+        open={open} onClose={() => { setOpen(false); setDone(null); setError(null); }}
         title="Assign fees to students"
-        description="Creates a fee assignment for every active student in the structure's class and academic year who doesn't already have one."
+        description="An assignment is what makes a student collectable. Create one per student, then use Collect on the Assignments table."
         footer={
           <>
-            <Button variant="ghost" onClick={() => { setOpen(false); setDone(null); }}>Close</Button>
-            <Button form="assign-fees" type="submit" disabled={pending}>Assign</Button>
+            <Button variant="ghost" onClick={() => { setOpen(false); setDone(null); setError(null); }}>Close</Button>
+            <Button form="assign-fees" type="submit" disabled={pending || noStructures}>Assign</Button>
           </>
         }
       >
+        {noStructures ? (
+          <p className="text-sm text-[var(--color-fg-muted)]">
+            Create a fee structure first (the “Fee structure” button), then come back here to assign it to students.
+          </p>
+        ) : (
         <form
           id="assign-fees"
           action={async (fd) => {
@@ -182,16 +194,49 @@ export function AssignFeesButton({
               ))}
             </Select>
           </Field>
+
+          <Field label="Assign to">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setScope("CLASS")}
+                className={`flex-1 rounded-md border px-3 py-2 text-sm ${scope === "CLASS" ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)] text-[var(--color-brand)] font-medium" : "border-[var(--color-border)] text-[var(--color-fg-muted)]"}`}
+              >
+                All students in class
+              </button>
+              <button
+                type="button"
+                onClick={() => setScope("ONE")}
+                className={`flex-1 rounded-md border px-3 py-2 text-sm ${scope === "ONE" ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)] text-[var(--color-brand)] font-medium" : "border-[var(--color-border)] text-[var(--color-fg-muted)]"}`}
+              >
+                One student
+              </button>
+            </div>
+          </Field>
+
+          {scope === "ONE" && (
+            <Field label="Student" hint="Manual override — ignores class / academic-year matching">
+              <Select name="studentId" required>
+                {students.length === 0 && <option value="">No students yet</option>}
+                {students.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} · {s.admissionNo} · {s.className}</option>
+                ))}
+              </Select>
+            </Field>
+          )}
+
           <Field label="Discount per student" hint="Optional flat discount deducted from the structure total">
             <Input name="discount" type="number" min="0" step="1" defaultValue={0} />
           </Field>
           {error && <p className="text-xs text-red-600">{error}</p>}
-          {done !== null && <p className="text-xs text-emerald-600">{done} assignment(s) created.</p>}
+          {done !== null && <p className="text-xs text-emerald-600">{done} assignment(s) created — close this dialog and use “Collect” in the Assignments table.</p>}
         </form>
+        )}
       </Modal>
     </>
   );
 }
+
 
 export function NewStructureButton({
   classes, years,

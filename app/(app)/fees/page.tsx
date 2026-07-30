@@ -46,6 +46,15 @@ export default async function FeesPage({
   const accounts = scope ? scopeByInstitute(store.accounts.values(), scope) : [];
   const classes = scope ? scopeByInstitute(store.classes.values(), scope) : [];
   const years = scope ? scopeByInstitute(store.academicYears.values(), scope) : [];
+  const studentOptions = (scope ? scopeByInstitute(store.students.values(), scope) : [])
+    .filter((s) => s.status === "ACTIVE")
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      admissionNo: s.admissionNo,
+      className: store.classes.get(s.classId)?.name ?? "—",
+    }));
+
 
   const totalPayable = assignments.reduce((s, a) => s + a.totalPayable, 0);
   const totalPaid = assignments.reduce((s, a) => s + a.totalPaid, 0);
@@ -67,7 +76,9 @@ export default async function FeesPage({
                   yearName: store.academicYears.get(fs.academicYearId)?.name ?? "—",
                   totalAmount: fs.totalAmount,
                 }))}
+                students={studentOptions}
               />
+
             )}
             {canWriteStructure && (
               <NewStructureButton
@@ -95,15 +106,33 @@ export default async function FeesPage({
       </div>
 
       {allAssignments.length === 0 && (
+
         <Card className="mb-6">
           <CardHeader><div><CardTitle>How fee collection works</CardTitle><CardDescription>Three steps before you can collect a payment</CardDescription></div></CardHeader>
           <ol className="list-decimal space-y-1 pl-5 text-sm text-[var(--color-fg-muted)]">
             <li><span className="font-medium text-[var(--color-fg)]">Create a fee structure</span> for a class + academic year (Institute Admin).</li>
-            <li><span className="font-medium text-[var(--color-fg)]">Assign fees</span> to students with the “Assign fees” button — this creates one assignment per active student (Institute Admin).</li>
+            <li><span className="font-medium text-[var(--color-fg)]">Assign fees</span> to students — this creates one assignment per student (Institute Admin).</li>
             <li><span className="font-medium text-[var(--color-fg)]">Collect</span> full or partial payments from the Assignments table below (Institute Admin, Accountant, Cashier).</li>
           </ol>
+          {canWriteStructure && (
+            <div className="mt-4">
+              <AssignFeesButton
+                label="Step 2 — Assign fees to students"
+                structures={structures.map((fs) => ({
+                  id: fs.id,
+                  name: fs.name,
+                  className: store.classes.get(fs.classId)?.name ?? "—",
+                  yearName: store.academicYears.get(fs.academicYearId)?.name ?? "—",
+                  totalAmount: fs.totalAmount,
+                }))}
+                students={studentOptions}
+              />
+            </div>
+          )}
         </Card>
       )}
+
+
 
       <div className="mb-2 text-sm font-medium">Assignments</div>
       <ListToolbar
