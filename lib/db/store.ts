@@ -57,25 +57,46 @@ export interface FeeStructure {
 }
 export interface FeeAssignment {
   id: string; instituteId: string; studentId: string; feeStructureId: string;
-  discount: number; totalPayable: number; totalPaid: number;
-  status: "PENDING" | "PARTIAL" | "PAID"; createdAt: string;
+  /** Denormalised for year-wise ledgers (copied from the fee structure). */
+  academicYearId?: string;
+  discount: number;
+  /** Who approved / applied the discount. */
+  discountBy?: string; discountByName?: string; discountReason?: string;
+  /** Outstanding carried forward from earlier academic years at assignment time. */
+  previousBalance?: number;
+  /** Assignment ids whose balance was rolled into previousBalance. */
+  carriedFrom?: string[];
+  /** Set on an old assignment once its balance was carried into a newer year. */
+  carriedForwardTo?: string;
+  totalPayable: number; totalPaid: number;
+  status: "PENDING" | "PARTIAL" | "PAID"; createdAt: string; updatedAt?: string;
 }
 export type PaymentMode = "CASH" | "BANK" | "CARD" | "UPI" | "CHEQUE" | "ONLINE";
+export interface ChequeDetails {
+  chequeNo: string; chequeDate: string; bankName: string; branch?: string;
+}
 export interface FeePayment {
   id: string; instituteId: string; assignmentId: string; studentId: string;
   receiptNo: string; amount: number; mode: PaymentMode; accountId?: string;
+  /** Split of this payment across carried-forward dues and the current year. */
+  appliedToPrevious?: number; appliedToCurrent?: number;
+  cheque?: ChequeDetails;
   reference?: string; paidAt: string; createdBy: string; createdByName: string;
+  updatedAt?: string; updatedBy?: string; updatedByName?: string;
 }
 
 export interface ExpenseCategory {
-  id: string; instituteId: string; name: string; createdAt: string;
+  id: string; instituteId: string; name: string; createdAt: string; updatedAt?: string;
 }
 export interface Expense {
   id: string; instituteId: string; categoryId: string;
   voucherNo: string; description: string; amount: number;
   spentAt: string; mode: PaymentMode; accountId?: string;
+  cheque?: ChequeDetails;
   status: "PAID" | "DRAFT"; createdAt: string; createdBy: string;
+  updatedAt?: string; updatedBy?: string; updatedByName?: string;
 }
+
 
 export interface Account {
   id: string; instituteId: string; name: string;
@@ -272,4 +293,89 @@ export function nextReceiptNo(): string {
 export function nextVoucherNo(): string {
   store.voucherCounter += 1;
   return `VCH-${store.voucherCounter}`;
+}
+
+// ---------------------------------------------------------------------------
+// Fee ledger helpers (previous balance / year-wise dues)
+// ---------------------------------------------------------------------------
+
+/** Academic year of an assignment, falling back to its fee structure. */
+export function assignmentYearId(a: FeeAssignment): string {
+  return a.academicYearId ?? store.feeStructures.get(a.feeStructureId)?.academicYearId ?? "";
+}
+
+/** Current-year payable + carried-forward previous balance. */
+export function grossPayable(a: FeeAssignment): number {
+  return a.totalPayable + (a.previousBalance ?? 0);
+}
+
+/** Outstanding on an assignment (0 once the balance has been carried forward). */
+export function assignmentBalance(a: FeeAssignment): number {
+  if (a.carriedForwardTo) return 0;
+  return Math.max(0, grossPayable(a) - a.totalPaid);
+}
+
+export function assignmentStatusFor(a: FeeAssignment): "PENDING" | "PARTIAL" | "PAID" {
+  if (a.totalPaid <= 0) return "PENDING";
+  return a.totalPaid >= grossPayable(a) ? "PAID" : "PARTIAL";
+}
+
+/** Chronological sort key for an academic year (start date, then name). */
+export function yearSortKey(yearId: string): string {
+  const y = store.academicYears.get(yearId);
+  return `${y?.startDate ?? "9999"}-${y?.name ?? yearId}`;
+}
+
+export interface LedgerRow {
+  assignment: FeeAssignment;
+  yearId: string;
+  yearName: string;
+  structureName: string;
+  previousBalance: number;
+  currentFees: number;
+  discount: number;
+  grossPayable: number;
+  paid: number;
+  balance: number;
+  carriedForward: boolean;
+}
+
+/** Year-wise fee ledger for a student, oldest year first. */
+export function studentLedger(studentId: string): LedgerRow[] {
+  return Array.from(store.feeAssignments.values())
+    .filter((a) => a.studentId === studentId)
+    .sort((a, b) => yearSortKey(assignmentYearId(a)).localeCompare(yearSortKey(assignmentYearId(b))))
+    .map((a) => {
+      const yearId = assignmentYearId(a);
+      const fs = store.feeStructures.get(a.feeStructureId);
+      return {
+        assignment: a,
+        yearId,
+        yearName: store.academicYears.get(yearId)?.name ?? "—",
+        structureName: fs?.name ?? "—",
+        previousBalance: a.previousBalance ?? 0,
+        currentFees: a.totalPayable,
+        discount: a.discount,
+        grossPayable: grossPayable(a),
+        paid: a.totalPaid,
+        balance: assignmentBalance(a),
+        carriedForward: !!a.carriedForwardTo,
+      };
+    });
+}
+
+/**
+ * Open assignments from academic years earlier than `yearId` whose balance has
+ * not yet been carried forward — these become the "previous balance".
+ */
+export function openPriorAssignments(studentId: string, yearId: string): FeeAssignment[] {
+  const key = yearSortKey(yearId);
+  return Array.from(store.feeAssignments.values()).filter((a) => {
+    if (a.studentId !== studentId) return false;
+    if (a.carriedForwardTo) return false;
+    const ay = assignmentYearId(a);
+    if (!ay || ay === yearId) return false;
+    if (yearSortKey(ay).localeCompare(key) >= 0) return false;
+    return assignmentBalance(a) > 0;
+  });
 }

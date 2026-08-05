@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { NewExpenseButton, NewCategoryButton } from "./_actions";
+import { NewExpenseButton, CategoryManagerButton, EditExpenseButton } from "./_actions";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Pagination } from "@/components/pagination";
@@ -26,6 +26,8 @@ export default async function ExpensesPage({
     .sort((a, b) => b.spentAt.localeCompare(a.spentAt));
   const categories = scope ? scopeByInstitute(store.expenseCategories.values(), scope) : [];
   const accounts = scope ? scopeByInstitute(store.accounts.values(), scope) : [];
+  const catOptions = categories.map((c) => ({ id: c.id, name: c.name }));
+  const accOptions = accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }));
 
   const sp = await searchParams;
   const params = parseListParams(sp, { filterKeys: ["categoryId", "mode", "status"] });
@@ -37,7 +39,8 @@ export default async function ExpensesPage({
     if (!q) return true;
     return (
       r.description.toLowerCase().includes(q) ||
-      r.voucherNo.toLowerCase().includes(q)
+      r.voucherNo.toLowerCase().includes(q) ||
+      (r.cheque?.chequeNo ?? "").toLowerCase().includes(q)
     );
   });
   const page = paginate(filtered, params.page, params.pageSize);
@@ -45,20 +48,21 @@ export default async function ExpensesPage({
   const monthKey = new Date().toISOString().slice(0, 7);
   const monthlyTotal = all.filter((r) => r.spentAt.slice(0, 7) === monthKey).reduce((s, r) => s + r.amount, 0);
   const totalAll = all.reduce((s, r) => s + r.amount, 0);
+  const usage = new Map<string, number>();
+  for (const e of all) usage.set(e.categoryId, (usage.get(e.categoryId) ?? 0) + 1);
 
   return (
     <>
       <PageHeader
         title="Expenses"
-        description="Vouchers, categories, and expense reporting."
+        description="Vouchers, category management, cheque tracking and expense reporting."
         actions={
           canWrite ? (
             <div className="flex gap-2">
-              <NewCategoryButton />
-              <NewExpenseButton
-                categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-                accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
+              <CategoryManagerButton
+                categories={categories.map((c) => ({ id: c.id, name: c.name, usage: usage.get(c.id) ?? 0 }))}
               />
+              <NewExpenseButton categories={catOptions} accounts={accOptions} />
             </div>
           ) : null
         }
@@ -71,11 +75,11 @@ export default async function ExpensesPage({
       </div>
 
       <ListToolbar
-        placeholder="Search by description or voucher #…"
+        placeholder="Search by description, voucher # or cheque #…"
         filters={[
           { key: "categoryId", label: "Category", options: categories.map((c) => ({ value: c.id, label: c.name })) },
           { key: "mode", label: "Mode", options: ["CASH","BANK","CARD","UPI","CHEQUE","ONLINE"].map((m) => ({ value: m, label: m })) },
-          { key: "status", label: "Status", options: [{ value: "PAID", label: "Paid" }, { value: "DRAFT", label: "Draft" }, { value: "APPROVED", label: "Approved" }] },
+          { key: "status", label: "Status", options: [{ value: "PAID", label: "Paid" }, { value: "DRAFT", label: "Draft" }] },
         ]}
       />
       <DataTable
@@ -90,9 +94,27 @@ export default async function ExpensesPage({
             <div className="text-xs text-[var(--color-fg-muted)]">{store.expenseCategories.get(r.categoryId)?.name ?? "—"}</div></div>
           )},
           { key: "mode", header: "Mode", render: (r) => <Badge tone="neutral">{r.mode}</Badge> },
+          { key: "cheque", header: "Cheque details", render: (r) => r.cheque ? (
+            <div className="text-xs">
+              <div className="font-mono">#{r.cheque.chequeNo}</div>
+              <div className="text-[var(--color-fg-muted)]">
+                {r.cheque.bankName}{r.cheque.branch ? ` · ${r.cheque.branch}` : ""} · {formatDate(r.cheque.chequeDate)}
+              </div>
+            </div>
+          ) : <span className="text-xs text-[var(--color-fg-subtle)]">—</span> },
           { key: "acc", header: "Account", render: (r) => r.accountId ? store.accounts.get(r.accountId)?.name ?? "—" : "—" },
           { key: "amount", header: "Amount", render: (r) => <span className="font-semibold">{formatCurrency(r.amount)}</span> },
           { key: "status", header: "Status", render: (r) => <Badge tone={r.status === "PAID" ? "success" : "warning"}>{r.status}</Badge> },
+          { key: "edit", header: "", render: (r) => canWrite ? (
+            <EditExpenseButton
+              row={{
+                id: r.id, description: r.description, amount: r.amount, spentAt: r.spentAt,
+                categoryId: r.categoryId, mode: r.mode, accountId: r.accountId, cheque: r.cheque,
+              }}
+              categories={catOptions}
+              accounts={accOptions}
+            />
+          ) : null },
         ]}
       />
       <Pagination page={page.page} totalPages={page.totalPages} total={page.total} pageSize={page.pageSize} />

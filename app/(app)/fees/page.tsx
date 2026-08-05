@@ -1,12 +1,17 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { scopeByInstitute, store } from "@/lib/db/store";
+import {
+  scopeByInstitute, store, assignmentYearId, grossPayable, assignmentBalance,
+} from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { AssignFeesButton, CollectFeeButton, NewStructureButton } from "./_actions";
+import {
+  AssignFeesButton, CollectFeeButton, NewStructureButton,
+  EditAssignmentButton, EditStructureButton, EditPaymentButton,
+} from "./_actions";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListToolbar } from "@/components/list-toolbar";
@@ -21,7 +26,7 @@ export default async function FeesPage({
   if (!hasPermission(perms, PERMISSIONS.FEE_READ)) redirect("/dashboard");
 
   const sp = await searchParams;
-  const params = parseListParams(sp, { filterKeys: ["status"] });
+  const params = parseListParams(sp, { filterKeys: ["status", "academicYearId"] });
 
   const scope = user.instituteId;
   const canCollect = hasPermission(perms, PERMISSIONS.FEE_COLLECT) && !!scope;
@@ -31,6 +36,7 @@ export default async function FeesPage({
   const q = params.q.toLowerCase();
   const assignments = allAssignments.filter((a) => {
     if (params.filters.status && a.status !== params.filters.status) return false;
+    if (params.filters.academicYearId && assignmentYearId(a) !== params.filters.academicYearId) return false;
     if (!q) return true;
     const s = store.students.get(a.studentId);
     return (
@@ -46,6 +52,8 @@ export default async function FeesPage({
   const accounts = scope ? scopeByInstitute(store.accounts.values(), scope) : [];
   const classes = scope ? scopeByInstitute(store.classes.values(), scope) : [];
   const years = scope ? scopeByInstitute(store.academicYears.values(), scope) : [];
+  const classOptions = classes.map((c) => ({ id: c.id, name: c.name }));
+  const yearOptions = years.map((y) => ({ id: y.id, name: y.name }));
   const studentOptions = (scope ? scopeByInstitute(store.students.values(), scope) : [])
     .filter((s) => s.status === "ACTIVE")
     .map((s) => ({
@@ -55,16 +63,17 @@ export default async function FeesPage({
       className: store.classes.get(s.classId)?.name ?? "—",
     }));
 
-
-  const totalPayable = assignments.reduce((s, a) => s + a.totalPayable, 0);
+  const totalPayable = assignments.reduce((s, a) => s + grossPayable(a), 0);
   const totalPaid = assignments.reduce((s, a) => s + a.totalPaid, 0);
-  const totalOutstanding = totalPayable - totalPaid;
+  const totalPrevious = assignments.reduce((s, a) => s + (a.previousBalance ?? 0), 0);
+  const totalDiscount = assignments.reduce((s, a) => s + a.discount, 0);
+  const totalOutstanding = assignments.reduce((s, a) => s + assignmentBalance(a), 0);
 
   return (
     <>
       <PageHeader
         title="Fee collection"
-        description="Assignments, partial payments, and receipts for the current academic year."
+        description="Year-wise assignments with carried-forward previous balances, discounts and receipts."
         actions={
           <div className="flex gap-2">
             {canWriteStructure && (
@@ -78,22 +87,26 @@ export default async function FeesPage({
                 }))}
                 students={studentOptions}
               />
-
             )}
             {canWriteStructure && (
-              <NewStructureButton
-                classes={classes.map((c) => ({ id: c.id, name: c.name }))}
-                years={years.map((y) => ({ id: y.id, name: y.name }))}
-              />
+              <NewStructureButton classes={classOptions} years={yearOptions} />
             )}
           </div>
         }
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
-          <CardHeader><div><CardTitle>Total payable</CardTitle><CardDescription>All active assignments</CardDescription></div></CardHeader>
+          <CardHeader><div><CardTitle>Total payable</CardTitle><CardDescription>Incl. previous balance</CardDescription></div></CardHeader>
           <p className="text-2xl font-semibold">{formatCurrency(totalPayable)}</p>
+        </Card>
+        <Card>
+          <CardHeader><div><CardTitle>Previous balance</CardTitle><CardDescription>Carried forward</CardDescription></div></CardHeader>
+          <p className="text-2xl font-semibold text-orange-600">{formatCurrency(totalPrevious)}</p>
+        </Card>
+        <Card>
+          <CardHeader><div><CardTitle>Discount</CardTitle><CardDescription>Concessions given</CardDescription></div></CardHeader>
+          <p className="text-2xl font-semibold text-sky-600">{formatCurrency(totalDiscount)}</p>
         </Card>
         <Card>
           <CardHeader><div><CardTitle>Collected</CardTitle><CardDescription>Received to date</CardDescription></div></CardHeader>
@@ -106,13 +119,12 @@ export default async function FeesPage({
       </div>
 
       {allAssignments.length === 0 && (
-
         <Card className="mb-6">
           <CardHeader><div><CardTitle>How fee collection works</CardTitle><CardDescription>Three steps before you can collect a payment</CardDescription></div></CardHeader>
           <ol className="list-decimal space-y-1 pl-5 text-sm text-[var(--color-fg-muted)]">
             <li><span className="font-medium text-[var(--color-fg)]">Create a fee structure</span> for a class + academic year (Institute Admin).</li>
-            <li><span className="font-medium text-[var(--color-fg)]">Assign fees</span> to students — this creates one assignment per student (Institute Admin).</li>
-            <li><span className="font-medium text-[var(--color-fg)]">Collect</span> full or partial payments from the Assignments table below (Institute Admin, Accountant, Cashier).</li>
+            <li><span className="font-medium text-[var(--color-fg)]">Assign fees</span> to students — unpaid dues from earlier years are carried forward automatically.</li>
+            <li><span className="font-medium text-[var(--color-fg)]">Collect</span> full or partial payments from the Assignments table below.</li>
           </ol>
           {canWriteStructure && (
             <div className="mt-4">
@@ -132,19 +144,23 @@ export default async function FeesPage({
         </Card>
       )}
 
-
-
       <div className="mb-2 text-sm font-medium">Assignments</div>
       <ListToolbar
         placeholder="Search by student name or admission #…"
-        filters={[{
-          key: "status", label: "Status",
-          options: [
-            { value: "PENDING", label: "Pending" },
-            { value: "PARTIAL", label: "Partial" },
-            { value: "PAID", label: "Paid" },
-          ],
-        }]}
+        filters={[
+          {
+            key: "academicYearId", label: "Academic year",
+            options: yearOptions.map((y) => ({ value: y.id, label: y.name })),
+          },
+          {
+            key: "status", label: "Status",
+            options: [
+              { value: "PENDING", label: "Pending" },
+              { value: "PARTIAL", label: "Partial" },
+              { value: "PAID", label: "Paid" },
+            ],
+          },
+        ]}
       />
       <DataTable
         rowKey={(r) => r.id}
@@ -153,28 +169,71 @@ export default async function FeesPage({
         columns={[
           { key: "stu", header: "Student", render: (r) => {
             const s = store.students.get(r.studentId);
-            return <div><div className="font-medium">{s?.name ?? "—"}</div><div className="text-xs text-[var(--color-fg-muted)] font-mono">{s?.admissionNo}</div></div>;
+            return (
+              <div>
+                <Link href={`/fees/students/${r.studentId}`} className="font-medium text-[var(--color-brand)] hover:underline">
+                  {s?.name ?? "—"}
+                </Link>
+                <div className="text-xs text-[var(--color-fg-muted)] font-mono">{s?.admissionNo}</div>
+              </div>
+            );
           }},
-          { key: "class", header: "Class", render: (r) => {
-            const s = store.students.get(r.studentId);
-            return s ? store.classes.get(s.classId)?.name ?? "—" : "—";
-          }},
+          { key: "year", header: "Year", render: (r) => store.academicYears.get(assignmentYearId(r))?.name ?? "—" },
           { key: "fs", header: "Structure", render: (r) => store.feeStructures.get(r.feeStructureId)?.name ?? "—" },
-          { key: "payable", header: "Payable", render: (r) => <span className="font-medium">{formatCurrency(r.totalPayable)}</span> },
+          { key: "prev", header: "Previous balance", render: (r) => (
+            <span className={(r.previousBalance ?? 0) > 0 ? "font-medium text-orange-600" : "text-[var(--color-fg-subtle)]"}>
+              {formatCurrency(r.previousBalance ?? 0)}
+            </span>
+          )},
+          { key: "disc", header: "Discount", render: (r) => (
+            r.discount > 0 ? (
+              <div>
+                <div className="font-medium text-sky-600">− {formatCurrency(r.discount)}</div>
+                <div className="text-xs text-[var(--color-fg-muted)]">
+                  by {r.discountByName ?? "—"}{r.discountReason ? ` · ${r.discountReason}` : ""}
+                </div>
+              </div>
+            ) : <span className="text-[var(--color-fg-subtle)]">—</span>
+          )},
+          { key: "payable", header: "Total due", render: (r) => (
+            <div>
+              <div className="font-medium">{formatCurrency(grossPayable(r))}</div>
+              <div className="text-xs text-[var(--color-fg-muted)]">This year {formatCurrency(r.totalPayable)}</div>
+            </div>
+          )},
           { key: "paid", header: "Paid", render: (r) => <span className="text-emerald-600">{formatCurrency(r.totalPaid)}</span> },
-          { key: "bal", header: "Balance", render: (r) => <span className="text-amber-600 font-medium">{formatCurrency(r.totalPayable - r.totalPaid)}</span> },
+          { key: "bal", header: "Balance", render: (r) => <span className="text-amber-600 font-medium">{formatCurrency(assignmentBalance(r))}</span> },
           { key: "status", header: "Status", render: (r) => (
-            <Badge tone={r.status === "PAID" ? "success" : r.status === "PARTIAL" ? "info" : "warning"}>{r.status}</Badge>
+            r.carriedForwardTo
+              ? <Badge tone="neutral">CARRIED FORWARD</Badge>
+              : <Badge tone={r.status === "PAID" ? "success" : r.status === "PARTIAL" ? "info" : "warning"}>{r.status}</Badge>
           )},
           { key: "action", header: "", render: (r) => (
-            canCollect && r.status !== "PAID" ? (
-              <CollectFeeButton
-                assignmentId={r.id}
-                studentName={store.students.get(r.studentId)?.name ?? ""}
-                balance={r.totalPayable - r.totalPaid}
-                accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
-              />
-            ) : null
+            <div className="flex items-center justify-end gap-1">
+              {canWriteStructure && (
+                <EditAssignmentButton
+                  assignment={{
+                    id: r.id,
+                    studentName: store.students.get(r.studentId)?.name ?? "",
+                    structureTotal: store.feeStructures.get(r.feeStructureId)?.totalAmount ?? r.totalPayable + r.discount,
+                    discount: r.discount,
+                    discountReason: r.discountReason,
+                    discountByName: r.discountByName,
+                    previousBalance: r.previousBalance ?? 0,
+                    totalPaid: r.totalPaid,
+                  }}
+                />
+              )}
+              {canCollect && r.status !== "PAID" && !r.carriedForwardTo ? (
+                <CollectFeeButton
+                  assignmentId={r.id}
+                  studentName={store.students.get(r.studentId)?.name ?? ""}
+                  balance={assignmentBalance(r)}
+                  previousDue={Math.max(0, (r.previousBalance ?? 0) - r.totalPaid)}
+                  accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
+                />
+              ) : null}
+            </div>
           )},
         ]}
       />
@@ -190,14 +249,26 @@ export default async function FeesPage({
               {payments.map((p) => {
                 const s = store.students.get(p.studentId);
                 return (
-                  <li key={p.id} className="flex items-center justify-between py-2">
+                  <li key={p.id} className="flex items-center justify-between gap-2 py-2">
                     <div>
                       <Link href={`/fees/receipts/${p.id}`} className="font-medium text-[var(--color-brand)] hover:underline">{p.receiptNo}</Link>
-                      <div className="text-xs text-[var(--color-fg-muted)]">{s?.name} · {p.mode}</div>
+                      <div className="text-xs text-[var(--color-fg-muted)]">
+                        {s?.name} · {p.mode}{p.cheque ? ` · cheque #${p.cheque.chequeNo}` : ""}
+                      </div>
+                      {(p.appliedToPrevious ?? 0) > 0 && (
+                        <div className="text-xs text-orange-600">{formatCurrency(p.appliedToPrevious ?? 0)} adjusted to previous balance</div>
+                      )}
                     </div>
-                    <div className="text-right">
-                      <div className="font-semibold">{formatCurrency(p.amount)}</div>
-                      <div className="text-xs text-[var(--color-fg-subtle)]">{formatDate(p.paidAt)}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <div className="font-semibold">{formatCurrency(p.amount)}</div>
+                        <div className="text-xs text-[var(--color-fg-subtle)]">{formatDate(p.paidAt)}</div>
+                      </div>
+                      {canCollect && (
+                        <EditPaymentButton
+                          payment={{ id: p.id, receiptNo: p.receiptNo, amount: p.amount, mode: p.mode, reference: p.reference, cheque: p.cheque }}
+                        />
+                      )}
                     </div>
                   </li>
                 );
@@ -212,12 +283,26 @@ export default async function FeesPage({
           ) : (
             <ul className="divide-y divide-[var(--color-border)] text-sm">
               {structures.map((fs) => (
-                <li key={fs.id} className="flex items-center justify-between py-2">
+                <li key={fs.id} className="flex items-center justify-between gap-2 py-2">
                   <div>
                     <div className="font-medium">{fs.name}</div>
-                    <div className="text-xs text-[var(--color-fg-muted)]">{store.classes.get(fs.classId)?.name} · {fs.items.length} heads</div>
+                    <div className="text-xs text-[var(--color-fg-muted)]">
+                      {store.classes.get(fs.classId)?.name} · {store.academicYears.get(fs.academicYearId)?.name} · {fs.items.length} heads
+                    </div>
                   </div>
-                  <div className="font-semibold">{formatCurrency(fs.totalAmount)}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="font-semibold">{formatCurrency(fs.totalAmount)}</div>
+                    {canWriteStructure && (
+                      <EditStructureButton
+                        structure={{
+                          id: fs.id, name: fs.name, totalAmount: fs.totalAmount,
+                          classId: fs.classId, academicYearId: fs.academicYearId, items: fs.items,
+                        }}
+                        classes={classOptions}
+                        years={yearOptions}
+                      />
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
