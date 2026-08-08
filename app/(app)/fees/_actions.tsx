@@ -54,14 +54,17 @@ export function CollectFeeButton({
   const [mode, setMode] = useState<Mode>("CASH");
   const [kind, setKind] = useState<"FULL" | "PARTIAL">("FULL");
   const [amount, setAmount] = useState<number>(balance);
+  const [discount, setDiscount] = useState<number>(0);
   const router = useRouter();
 
   const defaultAccount = accounts.find((a) => (mode === "CASH" ? a.type === "CASH" : a.type === "BANK"));
-  const safeAmount = Number.isFinite(amount) ? Math.min(Math.max(amount, 0), balance) : 0;
-  const remaining = balance - safeAmount;
+  const safeDiscount = Number.isFinite(discount) ? Math.min(Math.max(discount, 0), balance) : 0;
+  const safeAmount = Number.isFinite(amount) ? Math.min(Math.max(amount, 0), balance - safeDiscount) : 0;
+  const settled = safeAmount + safeDiscount;
+  const remaining = balance - settled;
   const prevDue = previousDue ?? 0;
-  const toPrevious = Math.min(safeAmount, prevDue);
-  const toCurrent = safeAmount - toPrevious;
+  const toPrevious = Math.min(settled, prevDue);
+  const toCurrent = settled - toPrevious;
 
   return (
     <>
@@ -77,7 +80,7 @@ export function CollectFeeButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="collect-fee" type="submit" disabled={pending || safeAmount <= 0}>Record payment</Button>
+            <Button form="collect-fee" type="submit" disabled={pending || settled <= 0}>Record payment</Button>
           </>
         }
       >
@@ -100,10 +103,10 @@ export function CollectFeeButton({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => { setKind("FULL"); setAmount(balance); }}
+                  onClick={() => { setKind("FULL"); setAmount(balance - safeDiscount); }}
                   className={`flex-1 rounded-md border px-3 py-2 text-sm ${kind === "FULL" ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)] text-[var(--color-brand)] font-medium" : "border-[var(--color-border)] text-[var(--color-fg-muted)]"}`}
                 >
-                  Full payment ({inr(balance)})
+                  Full payment ({inr(Math.max(0, balance - safeDiscount))})
                 </button>
                 <button
                   type="button"
@@ -116,18 +119,29 @@ export function CollectFeeButton({
             </Field>
           </div>
 
-          <Field label="Amount received *" hint={`Max ${inr(balance)}`}>
+          <Field label="Amount received *" hint={`Max ${inr(Math.max(0, balance - safeDiscount))}`}>
             <Input
-              name="amount" type="number" min="1" max={balance} step="1" required
+              name="amount" type="number" min="0" max={Math.max(0, balance - safeDiscount)} step="1" required
               value={Number.isFinite(amount) ? String(amount) : ""}
               onChange={(e) => {
                 const v = Number(e.target.value);
                 setAmount(v);
-                setKind(v >= balance ? "FULL" : "PARTIAL");
+                setKind(v >= balance - safeDiscount ? "FULL" : "PARTIAL");
               }}
             />
           </Field>
           <Field label="Mode *"><ModeSelect value={mode} onChange={setMode} /></Field>
+
+          <Field label="Discount / concession" hint="Counts as fees paid — no money is received">
+            <Input
+              name="discount" type="number" min="0" max={balance} step="1"
+              value={Number.isFinite(discount) ? String(discount) : ""}
+              onChange={(e) => setDiscount(Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Discount reason / approved by" hint="Your name is recorded as the approver">
+            <Input name="discountReason" maxLength={160} placeholder="Sibling concession" />
+          </Field>
 
           <div className="sm:col-span-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
             {prevDue > 0 && (
@@ -147,6 +161,12 @@ export function CollectFeeButton({
               <span className="text-[var(--color-fg-muted)]">Paying now</span>
               <span className="font-semibold">{inr(safeAmount)}</span>
             </div>
+            {safeDiscount > 0 && (
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-[var(--color-fg-muted)]">Discount granted</span>
+                <span className="font-semibold text-[var(--color-brand)]">{inr(safeDiscount)}</span>
+              </div>
+            )}
             <div className="mt-1 flex items-center justify-between">
               <span className="text-[var(--color-fg-muted)]">Remaining after this payment</span>
               <span className={`font-semibold ${remaining === 0 ? "text-emerald-600" : "text-amber-600"}`}>{inr(remaining)}</span>

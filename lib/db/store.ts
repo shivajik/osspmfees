@@ -69,6 +69,8 @@ export interface FeeAssignment {
   /** Set on an old assignment once its balance was carried into a newer year. */
   carriedForwardTo?: string;
   totalPayable: number; totalPaid: number;
+  /** Total concessions granted at the collection counter (part of totalPaid). */
+  collectionDiscount?: number;
   status: "PENDING" | "PARTIAL" | "PAID"; createdAt: string; updatedAt?: string;
 }
 export type PaymentMode = "CASH" | "BANK" | "CARD" | "UPI" | "CHEQUE" | "ONLINE";
@@ -80,6 +82,8 @@ export interface FeePayment {
   receiptNo: string; amount: number; mode: PaymentMode; accountId?: string;
   /** Split of this payment across carried-forward dues and the current year. */
   appliedToPrevious?: number; appliedToCurrent?: number;
+  /** Concession granted at the counter — settles dues without cash movement. */
+  discount?: number; discountBy?: string; discountByName?: string; discountReason?: string;
   cheque?: ChequeDetails;
   reference?: string; paidAt: string; createdBy: string; createdByName: string;
   updatedAt?: string; updatedBy?: string; updatedByName?: string;

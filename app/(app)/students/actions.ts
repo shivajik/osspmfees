@@ -72,3 +72,52 @@ export async function createStudent(fd: FormData): Promise<{ error?: string } | 
   });
   await saveStore();
 }
+
+const updateSchema = schema.extend({
+  id: z.string().min(1),
+  status: z.enum(["ACTIVE", "INACTIVE"]),
+});
+
+export async function updateStudent(fd: FormData): Promise<{ error?: string } | void> {
+  const user = await requireUser();
+  if (!hasPermission(permissionsForRole(user.role), PERMISSIONS.STUDENT_WRITE)) return { error: "Not authorized" };
+  if (!user.instituteId) return { error: "Institute scope required" };
+
+  const parsed = updateSchema.safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const d = parsed.data;
+
+  const student = store.students.get(d.id);
+  if (!student || student.instituteId !== user.instituteId) return { error: "Student not found" };
+
+  const cls = store.classes.get(d.classId);
+  const bat = store.batches.get(d.batchId);
+  const ay = store.academicYears.get(d.academicYearId);
+  if (!cls || cls.instituteId !== user.instituteId) return { error: "Invalid class" };
+  if (!bat || bat.instituteId !== user.instituteId || bat.classId !== cls.id) return { error: "Invalid batch" };
+  if (!ay || ay.instituteId !== user.instituteId) return { error: "Invalid year" };
+
+  for (const s of store.students.values()) {
+    if (s.id === student.id) continue;
+    if (s.instituteId === user.instituteId && s.admissionNo.toLowerCase() === d.admissionNo.toLowerCase()) {
+      return { error: "Admission number already used" };
+    }
+  }
+
+  student.admissionNo = d.admissionNo;
+  student.name = d.name;
+  student.guardianName = d.guardianName || undefined;
+  student.phone = d.phone || undefined;
+  student.email = d.email || undefined;
+  student.classId = d.classId;
+  student.batchId = d.batchId;
+  student.academicYearId = d.academicYearId;
+  student.status = d.status;
+
+  pushAudit({
+    instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
+    action: "student.update", entity: "Student", entityId: student.id,
+    meta: { admissionNo: student.admissionNo, name: student.name, status: student.status },
+  });
+  await saveStore();
+}

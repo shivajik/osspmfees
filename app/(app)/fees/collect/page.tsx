@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { scopeByInstitute, store } from "@/lib/db/store";
+import { scopeByInstitute, store, assignmentBalance, grossPayable } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +36,7 @@ export default async function CollectCounterPage({
 
   const dueByStudent = new Map<string, number>();
   for (const a of assignments) {
-    const bal = a.totalPayable - a.totalPaid;
+    const bal = assignmentBalance(a);
     if (bal > 0) dueByStudent.set(a.studentId, (dueByStudent.get(a.studentId) ?? 0) + bal);
   }
 
@@ -205,13 +205,16 @@ export default async function CollectCounterPage({
             ) : (
               <ul className="divide-y divide-[var(--color-border)]">
                 {studentAssignments.map((a) => {
-                  const balance = a.totalPayable - a.totalPaid;
+                  const balance = assignmentBalance(a);
+                  const prevDue = Math.max(0, (a.previousBalance ?? 0) - a.totalPaid);
                   return (
                     <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                       <div className="min-w-0">
                         <div className="text-sm font-medium">{store.feeStructures.get(a.feeStructureId)?.name ?? "Fee"}</div>
                         <div className="text-xs text-[var(--color-fg-muted)]">
-                          Payable {formatCurrency(a.totalPayable)} · Paid {formatCurrency(a.totalPaid)}
+                          Payable {formatCurrency(grossPayable(a))} · Paid {formatCurrency(a.totalPaid)}
+                          {(a.previousBalance ?? 0) > 0 ? ` · incl. ${formatCurrency(a.previousBalance ?? 0)} previous year` : ""}
+                          {(a.collectionDiscount ?? 0) > 0 ? ` · discount ${formatCurrency(a.collectionDiscount ?? 0)}` : ""}
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -226,6 +229,7 @@ export default async function CollectCounterPage({
                             assignmentId={a.id}
                             studentName={selectedStudent.name}
                             balance={balance}
+                            previousDue={prevDue}
                             accounts={accounts}
                           />
                         )}

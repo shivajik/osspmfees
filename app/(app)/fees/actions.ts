@@ -37,7 +37,9 @@ function buildCheque(
 
 const collectSchema = z.object({
   assignmentId: z.string().min(1),
-  amount: z.coerce.number().int().positive().max(10_000_000),
+  amount: z.coerce.number().int().min(0).max(10_000_000),
+  discount: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+  discountReason: z.string().max(160).optional().or(z.literal("")),
   mode: z.enum(["CASH", "BANK", "CARD", "UPI", "CHEQUE", "ONLINE"]),
   accountId: z.string().min(1),
   reference: z.string().max(80).optional().or(z.literal("")),
@@ -52,7 +54,8 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
 
   const parsed = collectSchema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
-  const { assignmentId, amount, mode, accountId, reference } = parsed.data;
+  const { assignmentId, amount, discount, discountReason, mode, accountId, reference } = parsed.data;
+  if (amount + discount <= 0) return { error: "Enter an amount received or a discount" };
 
   const assn = store.feeAssignments.get(assignmentId);
   if (!assn || assn.instituteId !== user.instituteId) return { error: "Assignment not found" };
@@ -60,7 +63,7 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
   const account = store.accounts.get(accountId);
   if (!account || account.instituteId !== user.instituteId) return { error: "Invalid account" };
   const balance = assignmentBalance(assn);
-  if (amount > balance) return { error: "Amount exceeds outstanding balance" };
+  if (amount + discount > balance) return { error: "Amount plus discount exceeds the outstanding balance" };
 
   const cq = buildCheque(mode, parsed.data);
   if (cq.error) return { error: cq.error };
@@ -69,37 +72,47 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
   const paymentId = uid("pay");
   const receiptNo = nextReceiptNo();
 
-  // Payments settle carried-forward previous balance first, then the current year.
+  // Payments (and counter discounts) settle carried-forward previous balance
+  // first, then the current year's fees.
   const prevDue = Math.max(0, (assn.previousBalance ?? 0) - assn.totalPaid);
-  const appliedToPrevious = Math.min(amount, prevDue);
-  const appliedToCurrent = amount - appliedToPrevious;
+  const settled = amount + discount;
+  const appliedToPrevious = Math.min(settled, prevDue);
+  const appliedToCurrent = settled - appliedToPrevious;
 
   store.feePayments.set(paymentId, {
     id: paymentId, instituteId: user.instituteId,
     assignmentId, studentId: assn.studentId,
     receiptNo, amount, mode, accountId,
     appliedToPrevious, appliedToCurrent,
+    discount: discount > 0 ? discount : undefined,
+    discountBy: discount > 0 ? user.id : undefined,
+    discountByName: discount > 0 ? user.name : undefined,
+    discountReason: discount > 0 ? (discountReason || undefined) : undefined,
     cheque: cq.cheque,
     reference: reference || undefined, paidAt: now,
     createdBy: user.id, createdByName: user.name,
   });
 
-  assn.totalPaid += amount;
+  assn.totalPaid += settled;
+  if (discount > 0) assn.collectionDiscount = (assn.collectionDiscount ?? 0) + discount;
   assn.status = assignmentStatusFor(assn);
   assn.updatedAt = now;
 
-  account.currentBal += amount;
-  const txnId = uid("txn");
-  store.transactions.set(txnId, {
-    id: txnId, instituteId: user.instituteId, accountId,
-    direction: "CREDIT", amount, balanceAfter: account.currentBal,
-    reference: `Fee ${receiptNo}`, paymentId, occurredAt: now, createdAt: now,
-  });
+  // Only real money hits the account ledger — discounts never do.
+  if (amount > 0) {
+    account.currentBal += amount;
+    const txnId = uid("txn");
+    store.transactions.set(txnId, {
+      id: txnId, instituteId: user.instituteId, accountId,
+      direction: "CREDIT", amount, balanceAfter: account.currentBal,
+      reference: `Fee ${receiptNo}`, paymentId, occurredAt: now, createdAt: now,
+    });
+  }
 
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "fee.collect", entity: "FeePayment", entityId: paymentId,
-    meta: { amount, mode, receiptNo, appliedToPrevious, appliedToCurrent },
+    meta: { amount, discount, discountReason: discountReason || null, mode, receiptNo, appliedToPrevious, appliedToCurrent },
   });
   await saveStore();
   return { paymentId };
@@ -151,13 +164,14 @@ export async function updatePayment(fd: FormData): Promise<{ error?: string } | 
     }
   }
 
-  const prevDue = Math.max(0, (assn.previousBalance ?? 0) - (assn.totalPaid - pay.amount));
+  const settledOther = assn.totalPaid - pay.amount - (pay.discount ?? 0);
+  const prevDue = Math.max(0, (assn.previousBalance ?? 0) - settledOther);
   pay.amount = amount;
   pay.mode = mode;
   pay.reference = reference || undefined;
   pay.cheque = cq.cheque;
-  pay.appliedToPrevious = Math.min(amount, prevDue);
-  pay.appliedToCurrent = amount - pay.appliedToPrevious;
+  pay.appliedToPrevious = Math.min(amount + (pay.discount ?? 0), prevDue);
+  pay.appliedToCurrent = amount + (pay.discount ?? 0) - pay.appliedToPrevious;
   pay.updatedAt = now;
   pay.updatedBy = user.id;
   pay.updatedByName = user.name;

@@ -5,7 +5,7 @@ import { store } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { NewInstituteButton } from "./_actions";
+import { EditInstituteButton, NewInstituteButton } from "./_actions";
 import { formatDate } from "@/lib/utils";
 
 export default async function InstitutesPage() {
@@ -36,6 +36,11 @@ export default async function InstitutesPage() {
             <Badge tone={r.status === "ACTIVE" ? "success" : "warning"}>{r.status}</Badge>
           )},
           { key: "created", header: "Created", render: (r) => <span className="text-[var(--color-fg-muted)]">{formatDate(r.createdAt)}</span> },
+          { key: "actions", header: "", render: (r) => (
+            <div className="flex justify-end">
+              <EditInstituteButton institute={{ id: r.id, name: r.name, code: r.code, email: r.email, phone: r.phone, address: r.address, status: r.status }} />
+            </div>
+          )},
         ]}
       />
     </>

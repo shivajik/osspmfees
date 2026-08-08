@@ -25,6 +25,12 @@ const baseCookieOpts = {
   path: "/",
 };
 
+function isUsable(user: User | undefined | null): user is User {
+  if (!user || !user.active) return false;
+  if (user.lockedUntil && user.lockedUntil > Date.now()) return false;
+  return true;
+}
+
 export async function createSession(user: User) {
   const jti = uid("rt");
   const access = await signAccessToken({
@@ -66,7 +72,7 @@ export async function rotateSession(): Promise<User | null> {
   // Refresh rotation: invalidate old, mint new
   store.refreshTokens.delete(payload.jti);
   const user = store.users.get(payload.sub);
-  if (!user || !user.active) return null;
+  if (!isUsable(user)) return null;
   await createSession(user);
   return user;
 }
@@ -79,7 +85,7 @@ export async function getCurrentUser(): Promise<User | null> {
     const payload = await verifyAccessToken(at);
     if (payload?.sub) {
       const u = store.users.get(payload.sub);
-      if (u && u.active) return u;
+      if (isUsable(u)) return u;
     }
   }
   return rotateSession();

@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { store } from "@/lib/db/store";
+import { store, assignmentBalance, grossPayable } from "@/lib/db/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ArrowLeft, Download } from "lucide-react";
 import { PrintButton } from "./_print";
@@ -86,6 +86,18 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
               </td>
               <td className="px-3 py-3 text-right font-semibold">{formatCurrency(p.amount)}</td>
             </tr>
+            {(p.discount ?? 0) > 0 && (
+              <tr className="border-t border-[var(--color-border)]">
+                <td className="px-3 py-3">
+                  <div className="font-medium">Discount / concession</div>
+                  <div className="text-xs text-[var(--color-fg-muted)]">
+                    Settled without payment{p.discountReason ? ` · ${p.discountReason}` : ""}
+                    {p.discountByName ? ` · approved by ${p.discountByName}` : ""}
+                  </div>
+                </td>
+                <td className="px-3 py-3 text-right font-semibold">{formatCurrency(p.discount ?? 0)}</td>
+              </tr>
+            )}
             <tr className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)]">
               <td className="px-3 py-3 text-right text-xs font-medium uppercase text-[var(--color-fg-muted)]">Total received</td>
               <td className="px-3 py-3 text-right text-lg font-bold">{formatCurrency(p.amount)}</td>
@@ -95,9 +107,12 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
 
         {assn && (
           <div className="mt-4 flex justify-end gap-6 text-xs text-[var(--color-fg-muted)]">
-            <div>Total payable: <span className="font-medium text-[var(--color-fg)]">{formatCurrency(assn.totalPayable)}</span></div>
+            <div>Total payable: <span className="font-medium text-[var(--color-fg)]">{formatCurrency(grossPayable(assn))}</span></div>
+            {(assn.previousBalance ?? 0) > 0 && (
+              <div>Previous year dues: <span className="font-medium text-[var(--color-fg)]">{formatCurrency(assn.previousBalance ?? 0)}</span></div>
+            )}
             <div>Paid to date: <span className="font-medium text-emerald-600">{formatCurrency(assn.totalPaid)}</span></div>
-            <div>Balance: <span className="font-medium text-amber-600">{formatCurrency(assn.totalPayable - assn.totalPaid)}</span></div>
+            <div>Balance: <span className="font-medium text-amber-600">{formatCurrency(assignmentBalance(assn))}</span></div>
           </div>
         )}
 

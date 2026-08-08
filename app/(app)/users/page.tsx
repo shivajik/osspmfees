@@ -5,7 +5,7 @@ import { store } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { NewUserButton } from "./_actions";
+import { NewUserButton, UserAccessButtons } from "./_actions";
 import { formatDate } from "@/lib/utils";
 
 export default async function UsersPage() {
@@ -44,6 +44,16 @@ export default async function UsersPage() {
             r.lockedUntil && r.lockedUntil > Date.now() ? <Badge tone="danger">Locked</Badge> : <span className="text-[var(--color-fg-subtle)]">—</span>
           )},
           { key: "created", header: "Created", render: (r) => <span className="text-[var(--color-fg-muted)]">{formatDate(r.createdAt)}</span> },
+          { key: "actions", header: "", render: (r) => (
+            <UserAccessButtons
+              user={{
+                id: r.id, name: r.name, email: r.email,
+                active: r.active,
+                locked: !!(r.lockedUntil && r.lockedUntil > Date.now()),
+                isSelf: r.id === user.id,
+              }}
+            />
+          )},
         ]}
       />
     </>

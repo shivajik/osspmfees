@@ -5,7 +5,7 @@ import { scopeByInstitute, store } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { NewStudentButton } from "./_actions";
+import { EditStudentButton, NewStudentButton } from "./_actions";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Pagination } from "@/components/pagination";
 import { parseListParams, paginate } from "@/lib/list-params";
@@ -87,6 +87,23 @@ export default async function StudentsPage({
           )},
           { key: "status", header: "Status", render: (r) => (
             <Badge tone={r.status === "ACTIVE" ? "success" : "warning"}>{r.status}</Badge>
+          )},
+          { key: "actions", header: "", render: (r) => (
+            canWrite ? (
+              <div className="flex justify-end">
+                <EditStudentButton
+                  student={{
+                    id: r.id, admissionNo: r.admissionNo, name: r.name,
+                    guardianName: r.guardianName, phone: r.phone, email: r.email,
+                    classId: r.classId, batchId: r.batchId, academicYearId: r.academicYearId,
+                    status: r.status,
+                  }}
+                  classes={classes.map((c) => ({ id: c.id, name: c.name }))}
+                  batches={batches.map((b) => ({ id: b.id, name: b.name, classId: b.classId }))}
+                  years={years.map((y) => ({ id: y.id, name: y.name }))}
+                />
+              </div>
+            ) : null
           )},
         ]}
       />

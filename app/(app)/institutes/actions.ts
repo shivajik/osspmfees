@@ -45,3 +45,40 @@ export async function createInstitute(fd: FormData): Promise<{ error?: string } 
   });
   await saveStore();
 }
+
+const updateSchema = schema.extend({
+  id: z.string().min(1),
+  status: z.enum(["ACTIVE", "SUSPENDED"]),
+});
+
+export async function updateInstitute(fd: FormData): Promise<{ error?: string } | void> {
+  const user = await requireUser();
+  if (user.role !== ROLES.SUPER_ADMIN) return { error: "Not authorized" };
+
+  const parsed = updateSchema.safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid data" };
+  const { id, name, code, email, phone, address, status } = parsed.data;
+
+  const inst = store.institutes.get(id);
+  if (!inst) return { error: "Institute not found" };
+  for (const other of store.institutes.values()) {
+    if (other.id !== id && other.code.toLowerCase() === code.toLowerCase()) {
+      return { error: "Code already in use" };
+    }
+  }
+
+  inst.name = name;
+  inst.code = code.toUpperCase();
+  inst.email = email || undefined;
+  inst.phone = phone || undefined;
+  inst.address = address || undefined;
+  inst.status = status;
+  inst.updatedAt = new Date().toISOString();
+
+  pushAudit({
+    instituteId: null, actorId: user.id, actorEmail: user.email,
+    action: "institute.update", entity: "Institute", entityId: id,
+    meta: { name, code: inst.code, status },
+  });
+  await saveStore();
+}
