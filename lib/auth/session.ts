@@ -44,9 +44,16 @@ export async function createSession(user: User) {
   store.refreshTokens.set(jti, { userId: user.id, createdAt: Date.now() });
 
   const jar = await cookies();
-  jar.set(ACCESS_COOKIE, access, { ...baseCookieOpts, maxAge: ACCESS_TTL_SECONDS });
-  jar.set(REFRESH_COOKIE, refresh, { ...baseCookieOpts, maxAge: REFRESH_TTL_SECONDS });
-  jar.set(CSRF_COOKIE, uid("csrf"), { ...baseCookieOpts, httpOnly: false, maxAge: REFRESH_TTL_SECONDS });
+  try {
+    jar.set(ACCESS_COOKIE, access, { ...baseCookieOpts, maxAge: ACCESS_TTL_SECONDS });
+    jar.set(REFRESH_COOKIE, refresh, { ...baseCookieOpts, maxAge: REFRESH_TTL_SECONDS });
+    jar.set(CSRF_COOKIE, uid("csrf"), { ...baseCookieOpts, httpOnly: false, maxAge: REFRESH_TTL_SECONDS });
+  } catch {
+    // Cookies are read-only while rendering a Server Component; the caller
+    // (route handler / server action) will mint fresh cookies instead.
+    store.refreshTokens.delete(jti);
+    return;
+  }
   await saveStore();
 }
 
@@ -63,16 +70,18 @@ export async function destroySession() {
   await saveStore();
 }
 
-export async function rotateSession(): Promise<User | null> {
+/** Validates the refresh cookie. Only rotates cookies when writes are allowed. */
+export async function rotateSession(mutateCookies = true): Promise<User | null> {
   const jar = await cookies();
   const rt = jar.get(REFRESH_COOKIE)?.value;
   if (!rt) return null;
   const payload = await verifyRefreshToken(rt);
   if (!payload?.jti || !store.refreshTokens.has(payload.jti)) return null;
-  // Refresh rotation: invalidate old, mint new
-  store.refreshTokens.delete(payload.jti);
   const user = store.users.get(payload.sub);
   if (!isUsable(user)) return null;
+  if (!mutateCookies) return user;
+  // Refresh rotation: invalidate old, mint new
+  store.refreshTokens.delete(payload.jti);
   await createSession(user);
   return user;
 }
@@ -88,7 +97,8 @@ export async function getCurrentUser(): Promise<User | null> {
       if (isUsable(u)) return u;
     }
   }
-  return rotateSession();
+  // Server Components cannot write cookies — validate without rotating.
+  return rotateSession(false);
 }
 
 export async function requireUser(): Promise<User> {
