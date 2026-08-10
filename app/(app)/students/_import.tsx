@@ -64,12 +64,19 @@ export function ImportStudentsButton({ years }: { years: { id: string; name: str
               <option value="0">No — students only</option>
             </Select>
           </Field>
+          <Field label="Duplicate admission numbers" hint="Sheets that repeat a class code (e.g. JR.KG.1) get a unique suffix automatically">
+            <Select name="onDuplicate" defaultValue="autonumber">
+              <option value="autonumber">Allow — auto-number duplicates</option>
+              <option value="skip">Skip duplicate rows</option>
+            </Select>
+          </Field>
           <Field label="Default class" hint="Used only when the sheet has no class column">
             <Input name="defaultClass" maxLength={40} />
           </Field>
           <Field label="Default division" hint="Defaults to A">
             <Input name="defaultSection" maxLength={20} />
           </Field>
+
         </form>
 
         {error && <p className="mt-3 text-xs text-red-600">{error}</p>}

@@ -124,6 +124,8 @@ export function parseStudentWorkbook(
     header.map.forEach((k) => detected.add(k));
     const titleClass = findTitleClass(aoa, header.index);
 
+    const sheetRows: Array<ParsedStudentRow & { serial?: string }> = [];
+
     for (let r = header.index + 1; r < aoa.length; r++) {
       const raw = aoa[r] ?? [];
       const get = (key: Key): unknown => {
@@ -138,9 +140,9 @@ export function parseStudentWorkbook(
       const warnings: string[] = [];
       const className = String(get("className") ?? "").trim() || titleClass || defaults.className || "";
       const section = String(get("section") ?? "").trim() || defaults.section || "A";
+      const serial = String(get("serial") ?? "").trim();
       let admissionNo = String(get("admissionNo") ?? "").trim();
       if (!admissionNo) {
-        const serial = String(get("serial") ?? "").trim();
         admissionNo = serial ? `${sheetName.slice(0, 6)}-${serial}` : "";
         if (admissionNo) warnings.push("Admission number generated from serial number");
       }
@@ -153,13 +155,14 @@ export function parseStudentWorkbook(
         continue;
       }
 
-      rows.push({
+      sheetRows.push({
         sheet: sheetName,
         rowNo: r + 1,
         admissionNo,
         name,
         className,
         section,
+        serial,
         phone: cleanPhone(get("phone")),
         guardianName: String(get("guardianName") ?? "").trim() || undefined,
         email: String(get("email") ?? "").trim() || undefined,
@@ -169,7 +172,30 @@ export function parseStudentWorkbook(
         warnings,
       });
     }
+
+    // Many school sheets put a class code (e.g. "JR.KG.1") in the PRN/GR column for
+    // every pupil. That is a class marker, not a unique admission number — expand it
+    // into a unique per-student code instead of dropping the rows as duplicates.
+    const counts = new Map<string, number>();
+    for (const row of sheetRows) {
+      const key = row.admissionNo.toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const used = new Map<string, number>();
+    for (const row of sheetRows) {
+      const key = row.admissionNo.toLowerCase();
+      if ((counts.get(key) ?? 0) > 1) {
+        const n = (used.get(key) ?? 0) + 1;
+        used.set(key, n);
+        const suffix = row.serial || String(n);
+        row.admissionNo = `${row.admissionNo}-${suffix}`;
+        row.warnings.push("Shared roll/PRN code — unique admission number generated");
+      }
+      delete (row as { serial?: string }).serial;
+      rows.push(row);
+    }
   }
 
   return { rows, errors, detectedColumns: Array.from(detected) };
 }
+

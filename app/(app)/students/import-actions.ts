@@ -26,10 +26,12 @@ export async function importStudents(fd: FormData): Promise<ImportSummary> {
 
   const dryRun = String(fd.get("dryRun") ?? "") === "1";
   const importFees = String(fd.get("importFees") ?? "") === "1";
+  const onDuplicate = String(fd.get("onDuplicate") ?? "autonumber") === "skip" ? "skip" : "autonumber";
   const defaults = {
     className: String(fd.get("defaultClass") ?? "").trim() || undefined,
     section: String(fd.get("defaultSection") ?? "").trim() || undefined,
   };
+
 
   let parsed;
   try {
@@ -55,14 +57,34 @@ export async function importStudents(fd: FormData): Promise<ImportSummary> {
     discountTotal: 0,
   };
 
-  if (dryRun) {
+  // Resolves an admission number that already appeared earlier in the same file.
+  // Default behaviour keeps the row and gives it a unique suffix; "skip" preserves
+  // the old strict behaviour.
+  const makeResolver = () => {
     const seen = new Set<string>();
+    return (admissionNo: string, rowNo: number): string | null => {
+      const key = admissionNo.toLowerCase();
+      if (!seen.has(key)) { seen.add(key); return admissionNo; }
+      if (onDuplicate === "skip") {
+        errors.push(`Duplicate admission number "${admissionNo}" in the file (row ${rowNo}) — skipped.`);
+        return null;
+      }
+      let n = 2;
+      let candidate = `${admissionNo}-${n}`;
+      while (seen.has(candidate.toLowerCase())) candidate = `${admissionNo}-${++n}`;
+      seen.add(candidate.toLowerCase());
+      errors.push(`Duplicate admission number "${admissionNo}" (row ${rowNo}) — imported as "${candidate}".`);
+      return candidate;
+    };
+  };
+
+  if (dryRun) {
+    const resolve = makeResolver();
     for (const r of parsed.rows) {
-      const key = r.admissionNo.toLowerCase();
-      if (seen.has(key)) { errors.push(`Duplicate admission number "${r.admissionNo}" in the file (row ${r.rowNo}).`); continue; }
-      seen.add(key);
+      const admissionNo = resolve(r.admissionNo, r.rowNo);
+      if (!admissionNo) continue;
       const existing = Array.from(store.students.values()).find(
-        (s) => s.instituteId === instituteId && s.admissionNo.toLowerCase() === key,
+        (s) => s.instituteId === instituteId && s.admissionNo.toLowerCase() === admissionNo.toLowerCase(),
       );
       if (existing) summary.studentsUpdated! += 1; else summary.studentsCreated! += 1;
       if (!Array.from(store.classes.values()).some((c) => c.instituteId === instituteId && c.name.toLowerCase() === r.className.toLowerCase())
@@ -81,6 +103,7 @@ export async function importStudents(fd: FormData): Promise<ImportSummary> {
     }));
     return summary;
   }
+
 
   const now = new Date().toISOString();
 
@@ -124,11 +147,11 @@ export async function importStudents(fd: FormData): Promise<ImportSummary> {
     return rec;
   };
 
-  const seen = new Set<string>();
+  const resolve = makeResolver();
   for (const r of parsed.rows) {
-    const key = r.admissionNo.toLowerCase();
-    if (seen.has(key)) { errors.push(`Duplicate admission number "${r.admissionNo}" in the file (row ${r.rowNo}) — skipped.`); continue; }
-    seen.add(key);
+    const admissionNo = resolve(r.admissionNo, r.rowNo);
+    if (!admissionNo) continue;
+    const key = admissionNo.toLowerCase();
 
     const cls = findOrCreateClass(r.className);
     const batch = findOrCreateBatch(cls.id, r.section);
@@ -148,7 +171,8 @@ export async function importStudents(fd: FormData): Promise<ImportSummary> {
     } else {
       const id = uid("stu");
       student = {
-        id, instituteId, admissionNo: r.admissionNo, name: r.name,
+        id, instituteId, admissionNo, name: r.name,
+
         guardianName: r.guardianName, phone: r.phone, email: r.email,
         classId: cls.id, batchId: batch.id, academicYearId,
         status: "ACTIVE" as const, createdAt: now,
