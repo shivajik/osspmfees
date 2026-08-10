@@ -1,5 +1,6 @@
 import "server-only";
 import { exportStoreState, importStoreState } from "@/lib/db/store";
+import { mirrorToTables } from "@/lib/db/relational";
 import { isProd } from "@/lib/env";
 
 const STATE_ID = "main";
@@ -89,4 +90,8 @@ export async function saveStore(): Promise<void> {
     const detail = await response.text();
     throw new Error(`Unable to save application data (${response.status}): ${detail}`);
   }
+
+  // Also project the state into the real relational tables (Student, FeePayment, ...)
+  // so every entity is queryable/reportable outside the snapshot.
+  await mirrorToTables();
 }
