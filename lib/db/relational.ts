@@ -188,31 +188,105 @@ function tables(): Array<{ name: string; rows: Row[] }> {
   ];
 }
 
-async function upsert(base: string, key: string, table: string, rows: Row[]): Promise<void> {
-  if (rows.length === 0) return;
+/**
+ * Column map of the live database, read from the PostgREST OpenAPI document.
+ * The mirror uses it to (a) skip tables that don't exist yet and (b) drop keys
+ * the table doesn't have, so one stale column can't reject a whole batch.
+ */
+let columnsCache: { at: number; map: Map<string, Set<string>> } | null = null;
+
+async function liveColumns(base: string, key: string): Promise<Map<string, Set<string>>> {
+  if (columnsCache && Date.now() - columnsCache.at < 60_000) return columnsCache.map;
+  const map = new Map<string, Set<string>>();
+  try {
+    const res = await fetch(`${base}/rest/v1/`, { headers: headers(key), cache: "no-store" });
+    if (res.ok) {
+      const spec = (await res.json()) as {
+        definitions?: Record<string, { properties?: Record<string, unknown> }>;
+        components?: { schemas?: Record<string, { properties?: Record<string, unknown> }> };
+      };
+      const defs = spec.definitions ?? spec.components?.schemas ?? {};
+      for (const [table, def] of Object.entries(defs)) {
+        const props = def?.properties ? Object.keys(def.properties) : [];
+        if (props.length > 0) map.set(table, new Set(props));
+      }
+    }
+  } catch {
+    // Unreachable spec → mirror without filtering (best effort).
+  }
+  columnsCache = { at: Date.now(), map };
+  return map;
+}
+
+function project(row: Row, cols: Set<string> | undefined): Row {
+  if (!cols) return row;
+  const out: Row = {};
+  for (const [k, v] of Object.entries(row)) if (cols.has(k)) out[k] = v;
+  return out;
+}
+
+async function post(base: string, key: string, table: string, rows: Row[]): Promise<void> {
+  const res = await fetch(`${base}/rest/v1/${encodeURIComponent(table)}?on_conflict=id`, {
+    method: "POST",
+    headers: headers(key, { Prefer: "resolution=merge-duplicates,return=minimal" }),
+    body: JSON.stringify(rows),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 400)}`);
+}
+
+/** Upsert in chunks; if a chunk fails, retry its rows one by one so a single
+ *  bad record (FK violation, oversized value) cannot drop the whole table. */
+async function upsert(
+  base: string,
+  key: string,
+  table: string,
+  rows: Row[],
+): Promise<{ written: number; errors: string[] }> {
+  if (rows.length === 0) return { written: 0, errors: [] };
   const chunkSize = 500;
   const chunks: Row[][] = [];
   for (let i = 0; i < rows.length; i += chunkSize) chunks.push(rows.slice(i, i + chunkSize));
 
-  // Chunks of the same table are independent upserts — send them together so a
-  // large table (thousands of students) can't exhaust the request time budget.
+  let written = 0;
+  const errors: string[] = [];
+
   await Promise.all(
     chunks.map(async (chunk) => {
-      const res = await fetch(`${base}/rest/v1/${encodeURIComponent(table)}?on_conflict=id`, {
-        method: "POST",
-        headers: headers(key, { Prefer: "resolution=merge-duplicates,return=minimal" }),
-        body: JSON.stringify(chunk),
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(`${table}: ${res.status} ${await res.text()}`);
+      try {
+        await post(base, key, table, chunk);
+        written += chunk.length;
+      } catch (batchError) {
+        const batchMessage = (batchError as Error).message;
+        // Permission / missing-table errors fail identically for every row —
+        // don't hammer the API with N single-row retries.
+        if (/^(401|403|404)\b/.test(batchMessage)) {
+          errors.push(batchMessage);
+          return;
+        }
+        for (const row of chunk) {
+          try {
+            await post(base, key, table, [row]);
+            written += 1;
+          } catch (rowError) {
+            if (errors.length < 5) {
+              errors.push(`id=${String(row.id)}: ${(rowError as Error).message}`);
+            }
+          }
+        }
+      }
     }),
   );
+
+  return { written, errors };
 }
 
 export interface MirrorResult {
   table: string;
   rows: number;
+  written: number;
   ok: boolean;
+  missing?: boolean;
   error?: string;
 }
 
@@ -231,6 +305,12 @@ const WAVES: string[][] = [
 ];
 
 let inFlight: Promise<MirrorResult[]> = Promise.resolve([]);
+let lastReport: { at: string; results: MirrorResult[] } | null = null;
+
+/** Most recent mirror outcome (for diagnostics via /api/admin/sync). */
+export function lastMirrorReport() {
+  return lastReport;
+}
 
 /**
  * Mirror the whole store into its relational tables (serialized per request).
@@ -246,24 +326,48 @@ export function mirrorToTables(): Promise<MirrorResult[]> {
 
   inFlight = inFlight.then(async () => {
     const report: MirrorResult[] = [];
+    const cols = await liveColumns(c.url, c.key);
+
     for (const wave of WAVES) {
       await Promise.all(
         wave.map(async (name) => {
           const rows = byName.get(name) ?? [];
-          try {
-            await upsert(c.url, c.key, name, rows);
-            report.push({ table: name, rows: rows.length, ok: true });
-          } catch (error) {
-            const message = (error as Error).message;
-            console.error(`[relational-mirror] FAILED ${name}:`, message);
-            report.push({ table: name, rows: rows.length, ok: false, error: message });
+          if (cols.size > 0 && !cols.has(name)) {
+            report.push({
+              table: name,
+              rows: rows.length,
+              written: 0,
+              ok: false,
+              missing: true,
+              error:
+                "Table is not exposed by the Data API — create it and grant service_role (see scripts/sql/ledgerly-relational-tables.sql).",
+            });
+            console.error(`[relational-mirror] MISSING TABLE ${name}`);
+            return;
           }
+          const projected = rows.map((r) => project(r, cols.get(name)));
+          const { written, errors } = await upsert(c.url, c.key, name, projected);
+          const ok = errors.length === 0;
+          if (!ok) console.error(`[relational-mirror] ${name}: ${errors.join(" | ")}`);
+          report.push({
+            table: name,
+            rows: rows.length,
+            written,
+            ok,
+            error: ok ? undefined : errors.join(" | "),
+          });
         }),
       );
     }
+
+    lastReport = { at: new Date().toISOString(), results: report };
     return report;
-  }).catch(() => []);
+  }).catch((error) => {
+    console.error("[relational-mirror] fatal:", (error as Error).message);
+    return [];
+  });
   return inFlight;
 }
+
 
 
