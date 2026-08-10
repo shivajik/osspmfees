@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EditStudentButton, NewStudentButton } from "./_actions";
+import { ImportStudentsButton } from "./_import";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Pagination } from "@/components/pagination";
 import { parseListParams, paginate } from "@/lib/list-params";
@@ -50,11 +51,14 @@ export default async function StudentsPage({
         title="Students"
         description={user.instituteId ? "Enrollment for your institute." : "All students across institutes."}
         actions={canWrite ? (
-          <NewStudentButton
-            classes={classes.map((c) => ({ id: c.id, name: c.name }))}
-            batches={batches.map((b) => ({ id: b.id, name: b.name, classId: b.classId }))}
-            years={years.map((y) => ({ id: y.id, name: y.name }))}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <ImportStudentsButton years={years.map((y) => ({ id: y.id, name: y.name }))} />
+            <NewStudentButton
+              classes={classes.map((c) => ({ id: c.id, name: c.name }))}
+              batches={batches.map((b) => ({ id: b.id, name: b.name, classId: b.classId }))}
+              years={years.map((y) => ({ id: y.id, name: y.name }))}
+            />
+          </div>
         ) : null}
       />
       <ListToolbar
