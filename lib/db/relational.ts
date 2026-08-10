@@ -190,37 +190,80 @@ function tables(): Array<{ name: string; rows: Row[] }> {
 
 async function upsert(base: string, key: string, table: string, rows: Row[]): Promise<void> {
   if (rows.length === 0) return;
-  const chunkSize = 200;
-  for (let i = 0; i < rows.length; i += chunkSize) {
-    const chunk = rows.slice(i, i + chunkSize);
-    const res = await fetch(`${base}/rest/v1/${encodeURIComponent(table)}?on_conflict=id`, {
-      method: "POST",
-      headers: headers(key, { Prefer: "resolution=merge-duplicates,return=minimal" }),
-      body: JSON.stringify(chunk),
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      throw new Error(`${table}: ${res.status} ${await res.text()}`);
-    }
-  }
+  const chunkSize = 500;
+  const chunks: Row[][] = [];
+  for (let i = 0; i < rows.length; i += chunkSize) chunks.push(rows.slice(i, i + chunkSize));
+
+  // Chunks of the same table are independent upserts — send them together so a
+  // large table (thousands of students) can't exhaust the request time budget.
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      const res = await fetch(`${base}/rest/v1/${encodeURIComponent(table)}?on_conflict=id`, {
+        method: "POST",
+        headers: headers(key, { Prefer: "resolution=merge-duplicates,return=minimal" }),
+        body: JSON.stringify(chunk),
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`${table}: ${res.status} ${await res.text()}`);
+    }),
+  );
 }
 
-let inFlight: Promise<void> = Promise.resolve();
+export interface MirrorResult {
+  table: string;
+  rows: number;
+  ok: boolean;
+  error?: string;
+}
 
-/** Mirror the whole store into its relational tables (best-effort, serialized). */
-export function mirrorToTables(): Promise<void> {
+/**
+ * Foreign-key waves: tables inside a wave have no dependency on each other, so
+ * they are mirrored in parallel; waves run in order.
+ */
+const WAVES: string[][] = [
+  ["Institute"],
+  ["User", "AcademicYear", "Class", "Account", "ExpenseCategory"],
+  ["Batch", "FeeStructure"],
+  ["Student", "FeeStructureItem", "Expense"],
+  ["FeeAssignment"],
+  ["FeePayment"],
+  ["Transaction", "AuditLog"],
+];
+
+let inFlight: Promise<MirrorResult[]> = Promise.resolve([]);
+
+/**
+ * Mirror the whole store into its relational tables (serialized per request).
+ * Returns a per-table report; failures are logged, never thrown, so a mirror
+ * problem cannot block a user action — but it IS visible via /api/admin/sync.
+ */
+export function mirrorToTables(): Promise<MirrorResult[]> {
   const c = cfg();
-  if (!c) return Promise.resolve();
+  if (!c) return Promise.resolve([]);
 
   const snapshot = tables();
+  const byName = new Map(snapshot.map((t) => [t.name, t.rows]));
+
   inFlight = inFlight.then(async () => {
-    for (const t of snapshot) {
-      try {
-        await upsert(c.url, c.key, t.name, t.rows);
-      } catch (error) {
-        console.warn(`[relational-mirror] skipped ${t.name}:`, (error as Error).message);
-      }
+    const report: MirrorResult[] = [];
+    for (const wave of WAVES) {
+      await Promise.all(
+        wave.map(async (name) => {
+          const rows = byName.get(name) ?? [];
+          try {
+            await upsert(c.url, c.key, name, rows);
+            report.push({ table: name, rows: rows.length, ok: true });
+          } catch (error) {
+            const message = (error as Error).message;
+            console.error(`[relational-mirror] FAILED ${name}:`, message);
+            report.push({ table: name, rows: rows.length, ok: false, error: message });
+          }
+        }),
+      );
     }
-  }).catch(() => {});
+    return report;
+  }).catch(() => []);
   return inFlight;
 }
+
+
