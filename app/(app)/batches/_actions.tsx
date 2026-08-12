@@ -18,10 +18,10 @@ export function NewBatchButton({
   return (
     <>
       <Button onClick={() => setOpen(true)} disabled={!classes.length || !years.length}>
-        <Plus className="h-4 w-4" />New batch
+        <Plus className="h-4 w-4" />New division
       </Button>
       <Modal
-        open={open} onClose={() => setOpen(false)} title="Create batch"
+        open={open} onClose={() => setOpen(false)} title="Create division"
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
@@ -40,7 +40,7 @@ export function NewBatchButton({
           }}
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
         >
-          <Field label="Batch name"><Input name="name" required maxLength={40} placeholder="10-A" /></Field>
+          <Field label="Division name"><Input name="name" required maxLength={40} placeholder="10-A" /></Field>
           <Field label="Class">
             <Select name="classId" required>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}

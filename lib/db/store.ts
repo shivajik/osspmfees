@@ -80,6 +80,8 @@ export interface ChequeDetails {
 export interface FeePayment {
   id: string; instituteId: string; assignmentId: string; studentId: string;
   receiptNo: string; amount: number; mode: PaymentMode; accountId?: string;
+  /** Fee type head this payment was collected against. */
+  feeHead?: string;
   /** Split of this payment across carried-forward dues and the current year. */
   appliedToPrevious?: number; appliedToCurrent?: number;
   /** Concession granted at the counter — settles dues without cash movement. */

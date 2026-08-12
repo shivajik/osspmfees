@@ -72,9 +72,9 @@ export function EditStudentButton({
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
-          <Field label="Batch">
+          <Field label="Division">
             <Select name="batchId" defaultValue={student.batchId} required key={classId}>
-              {filteredBatches.length === 0 && <option value="">— no batches —</option>}
+              {filteredBatches.length === 0 && <option value="">— no divisions —</option>}
               {filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </Select>
           </Field>
@@ -147,9 +147,9 @@ export function NewStudentButton({
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
-          <Field label="Batch">
+          <Field label="Division">
             <Select name="batchId" required>
-              {filteredBatches.length === 0 && <option value="">— no batches —</option>}
+              {filteredBatches.length === 0 && <option value="">— no divisions —</option>}
               {filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </Select>
           </Field>

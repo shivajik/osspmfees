@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
 import { collectFee, createStructure, updateStructure, assignFees, updateAssignment, updatePayment } from "./actions";
+import { FEE_HEADS } from "@/lib/fee-heads";
 
 type Mode = "CASH" | "BANK" | "CARD" | "UPI" | "CHEQUE" | "ONLINE";
 type Cheque = { chequeNo: string; chequeDate: string; bankName: string; branch?: string };
@@ -131,6 +132,15 @@ export function CollectFeeButton({
             />
           </Field>
           <Field label="Mode *"><ModeSelect value={mode} onChange={setMode} /></Field>
+
+          <div className="sm:col-span-2">
+            <Field label="Fee type / head *" hint="What this payment is being collected for">
+              <Select name="feeHead" defaultValue={FEE_HEADS[0]} required>
+                {FEE_HEADS.map((h) => <option key={h} value={h}>{h}</option>)}
+              </Select>
+            </Field>
+          </div>
+
 
           <Field label="Discount / concession" hint="Counts as fees paid — no money is received">
             <Input
@@ -453,9 +463,13 @@ function StructureFields({
         </Select>
       </Field>
       <div className="sm:col-span-2">
-        <Field label="Heads" hint="Format: Tuition:30000, Exam:5000">
+        <Field label="Heads" hint={`Format: Head:Amount, comma separated. Standard heads: ${FEE_HEADS.join(", ")}`}>
+          <datalist id="fee-heads">
+            {FEE_HEADS.map((h) => <option key={h} value={`${h}:`} />)}
+          </datalist>
           <Input
-            name="items" placeholder="Tuition:30000, Exam:5000"
+            list="fee-heads"
+            name="items" placeholder="Eligibility fees:500, I unit test:300"
             defaultValue={structure ? structure.items.map((i) => `${i.head}:${i.amount}`).join(", ") : ""}
           />
         </Field>

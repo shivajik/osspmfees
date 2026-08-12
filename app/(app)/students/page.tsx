@@ -65,7 +65,7 @@ export default async function StudentsPage({
         placeholder="Search by name, admission #, guardian, phone…"
         filters={[
           { key: "classId", label: "Class", options: classes.map((c) => ({ value: c.id, label: c.name })) },
-          { key: "batchId", label: "Batch", options: batches.map((b) => ({ value: b.id, label: b.name })) },
+          { key: "batchId", label: "Division", options: batches.map((b) => ({ value: b.id, label: b.name })) },
           { key: "status", label: "Status", options: [{ value: "ACTIVE", label: "Active" }, { value: "INACTIVE", label: "Inactive" }] },
         ]}
       />
@@ -82,7 +82,7 @@ export default async function StudentsPage({
             </div>
           )},
           { key: "class", header: "Class", render: (r) => store.classes.get(r.classId)?.name ?? "—" },
-          { key: "batch", header: "Batch", render: (r) => store.batches.get(r.batchId)?.name ?? "—" },
+          { key: "batch", header: "Division", render: (r) => store.batches.get(r.batchId)?.name ?? "—" },
           { key: "contact", header: "Contact", render: (r) => (
             <div className="text-xs">
               <div>{r.phone ?? "—"}</div>

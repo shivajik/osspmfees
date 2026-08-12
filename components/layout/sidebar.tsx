@@ -34,7 +34,7 @@ const groups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/academic-years", label: "Academic years", icon: CalendarRange, needs: PERMISSIONS.ACADEMIC_YEAR_WRITE },
       { href: "/classes", label: "Classes", icon: School, needs: PERMISSIONS.CLASS_READ },
-      { href: "/batches", label: "Batches", icon: BookOpen, needs: PERMISSIONS.BATCH_READ },
+      { href: "/batches", label: "Divisions", icon: BookOpen, needs: PERMISSIONS.BATCH_READ },
       { href: "/students", label: "Students", icon: GraduationCap, needs: PERMISSIONS.STUDENT_READ },
     ],
   },

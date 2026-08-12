@@ -68,6 +68,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           <div>
             <div className="text-xs uppercase text-[var(--color-fg-subtle)]">Payment</div>
             <div className="mt-1 text-xs text-[var(--color-fg-muted)]">Mode: <span className="font-medium text-[var(--color-fg)]">{p.mode}</span></div>
+            {p.feeHead && <div className="text-xs text-[var(--color-fg-muted)]">Fee head: <span className="font-medium text-[var(--color-fg)]">{p.feeHead}</span></div>}
             {account && <div className="text-xs text-[var(--color-fg-muted)]">Account: {account.name}</div>}
             {p.reference && <div className="text-xs text-[var(--color-fg-muted)]">Ref: <span className="font-mono">{p.reference}</span></div>}
             <div className="text-xs text-[var(--color-fg-muted)]">Cashier: {p.createdByName}</div>

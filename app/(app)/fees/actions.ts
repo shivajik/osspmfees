@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
 import { saveStore } from "@/lib/db/persistence";
+import { FEE_HEADS } from "@/lib/fee-heads";
 
 const chequeFields = {
   chequeNo: z.string().max(40).optional().or(z.literal("")),
@@ -42,6 +43,7 @@ const collectSchema = z.object({
   discountReason: z.string().max(160).optional().or(z.literal("")),
   mode: z.enum(["CASH", "BANK", "CARD", "UPI", "CHEQUE", "ONLINE"]),
   accountId: z.string().min(1),
+  feeHead: z.enum(FEE_HEADS).optional(),
   reference: z.string().max(80).optional().or(z.literal("")),
   ...chequeFields,
 });
@@ -54,7 +56,7 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
 
   const parsed = collectSchema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
-  const { assignmentId, amount, discount, discountReason, mode, accountId, reference } = parsed.data;
+  const { assignmentId, amount, discount, discountReason, mode, accountId, reference, feeHead } = parsed.data;
   if (amount + discount <= 0) return { error: "Enter an amount received or a discount" };
 
   const assn = store.feeAssignments.get(assignmentId);
@@ -82,7 +84,7 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
   store.feePayments.set(paymentId, {
     id: paymentId, instituteId: user.instituteId,
     assignmentId, studentId: assn.studentId,
-    receiptNo, amount, mode, accountId,
+    receiptNo, amount, mode, accountId, feeHead,
     appliedToPrevious, appliedToCurrent,
     discount: discount > 0 ? discount : undefined,
     discountBy: discount > 0 ? user.id : undefined,
@@ -112,7 +114,7 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "fee.collect", entity: "FeePayment", entityId: paymentId,
-    meta: { amount, discount, discountReason: discountReason || null, mode, receiptNo, appliedToPrevious, appliedToCurrent },
+    meta: { amount, discount, discountReason: discountReason || null, mode, feeHead: feeHead ?? null, receiptNo, appliedToPrevious, appliedToCurrent },
   });
   await saveStore();
   return { paymentId };

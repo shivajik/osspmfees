@@ -24,8 +24,8 @@ export default async function BatchesPage() {
   return (
     <>
       <PageHeader
-        title="Batches"
-        description="Section/division of a class for the current academic year."
+        title="Divisions"
+        description="Division/section of a class for the current academic year."
         actions={canWrite ? (
           <NewBatchButton
             classes={classes.map((c) => ({ id: c.id, name: c.name }))}
@@ -37,7 +37,7 @@ export default async function BatchesPage() {
         rowKey={(r) => r.id}
         rows={rows}
         columns={[
-          { key: "name", header: "Batch", render: (r) => <span className="font-medium">{r.name}</span> },
+          { key: "name", header: "Division", render: (r) => <span className="font-medium">{r.name}</span> },
           { key: "class", header: "Class", render: (r) => store.classes.get(r.classId)?.name ?? "—" },
           { key: "year", header: "Year", render: (r) => store.academicYears.get(r.academicYearId)?.name ?? "—" },
         ]}
