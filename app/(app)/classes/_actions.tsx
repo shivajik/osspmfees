@@ -20,7 +20,7 @@ export function NewClassButton() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="new-class" type="submit" disabled={pending}>Create</Button>
+            <Button form="new-class" type="submit" disabled={pending} loading={pending}>Create</Button>
           </>
         }
       >

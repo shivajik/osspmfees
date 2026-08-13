@@ -5,6 +5,7 @@ import { scopeByInstitute, store } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { NewBatchButton } from "./_actions";
+import { DeleteButton } from "@/components/delete-button";
 
 export default async function BatchesPage() {
   const user = await requireUser();
@@ -40,6 +41,11 @@ export default async function BatchesPage() {
           { key: "name", header: "Division", render: (r) => <span className="font-medium">{r.name}</span> },
           { key: "class", header: "Class", render: (r) => store.classes.get(r.classId)?.name ?? "—" },
           { key: "year", header: "Year", render: (r) => store.academicYears.get(r.academicYearId)?.name ?? "—" },
+          { key: "actions", header: "", render: (r) => canWrite ? (
+            <div className="flex justify-end">
+              <DeleteButton kind="batch" id={r.id} label={r.name} what="division" />
+            </div>
+          ) : null },
         ]}
       />
     </>

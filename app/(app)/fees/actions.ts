@@ -9,7 +9,6 @@ import {
 } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
 import { saveStore } from "@/lib/db/persistence";
-import { FEE_HEADS } from "@/lib/fee-heads";
 
 const chequeFields = {
   chequeNo: z.string().max(40).optional().or(z.literal("")),
@@ -43,7 +42,8 @@ const collectSchema = z.object({
   discountReason: z.string().max(160).optional().or(z.literal("")),
   mode: z.enum(["CASH", "BANK", "CARD", "UPI", "CHEQUE", "ONLINE"]),
   accountId: z.string().min(1),
-  feeHead: z.enum(FEE_HEADS).optional(),
+  feeHead: z.string().max(300).optional().or(z.literal("")),
+  feeHeads: z.string().max(2000).optional().or(z.literal("")),
   reference: z.string().max(80).optional().or(z.literal("")),
   ...chequeFields,
 });
@@ -70,6 +70,24 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
   const cq = buildCheque(mode, parsed.data);
   if (cq.error) return { error: cq.error };
 
+  // Optional per-head split — must add up to what this payment settles.
+  let feeHeadBreakup: { head: string; amount: number }[] | undefined;
+  if (parsed.data.feeHeads) {
+    try {
+      const raw = JSON.parse(parsed.data.feeHeads) as { head?: unknown; amount?: unknown }[];
+      feeHeadBreakup = (Array.isArray(raw) ? raw : [])
+        .map((r) => ({ head: String(r.head ?? "").slice(0, 60), amount: Math.max(0, Math.round(Number(r.amount) || 0)) }))
+        .filter((r) => r.head && r.amount > 0);
+    } catch {
+      return { error: "Invalid fee head selection" };
+    }
+  }
+  if (!feeHeadBreakup?.length) return { error: "Select at least one fee head for this payment" };
+  const headsTotal = feeHeadBreakup.reduce((s, h) => s + h.amount, 0);
+  if (headsTotal !== amount + discount) {
+    return { error: `Fee head amounts add up to ₹${headsTotal.toLocaleString("en-IN")} but this payment settles ₹${(amount + discount).toLocaleString("en-IN")}. Adjust the head amounts so both match.` };
+  }
+
   const now = new Date().toISOString();
   const paymentId = uid("pay");
   const receiptNo = nextReceiptNo();
@@ -84,7 +102,9 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
   store.feePayments.set(paymentId, {
     id: paymentId, instituteId: user.instituteId,
     assignmentId, studentId: assn.studentId,
-    receiptNo, amount, mode, accountId, feeHead,
+    receiptNo, amount, mode, accountId,
+    feeHead: feeHead || feeHeadBreakup.map((h) => h.head).join(", "),
+    feeHeadBreakup,
     appliedToPrevious, appliedToCurrent,
     discount: discount > 0 ? discount : undefined,
     discountBy: discount > 0 ? user.id : undefined,

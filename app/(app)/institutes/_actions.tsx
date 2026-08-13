@@ -33,7 +33,7 @@ export function EditInstituteButton({ institute }: { institute: InstituteRow }) 
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form={formId} type="submit" disabled={pending}>Save changes</Button>
+            <Button form={formId} type="submit" disabled={pending} loading={pending}>Save changes</Button>
           </>
         }
       >
@@ -87,7 +87,7 @@ export function NewInstituteButton() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="new-institute-form" type="submit" disabled={pending}>Create</Button>
+            <Button form="new-institute-form" type="submit" disabled={pending} loading={pending}>Create</Button>
           </>
         }
       >

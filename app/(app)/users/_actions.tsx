@@ -64,7 +64,7 @@ export function UserAccessButtons({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(null)}>Cancel</Button>
-            <Button form={`lock-${user.id}`} type="submit" disabled={pending}>Lock account</Button>
+            <Button form={`lock-${user.id}`} type="submit" disabled={pending} loading={pending}>Lock account</Button>
           </>
         }
       >
@@ -124,7 +124,7 @@ export function NewUserButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="new-user-form" type="submit" disabled={pending}>Create</Button>
+            <Button form="new-user-form" type="submit" disabled={pending} loading={pending}>Create</Button>
           </>
         }
       >

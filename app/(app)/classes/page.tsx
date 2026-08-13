@@ -5,6 +5,8 @@ import { scopeByInstitute, store } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { NewClassButton } from "./_actions";
+import { DeleteButton } from "@/components/delete-button";
+
 
 export default async function ClassesPage() {
   const user = await requireUser();
@@ -32,6 +34,12 @@ export default async function ClassesPage() {
           { key: "name", header: "Class", render: (r) => <span className="font-medium">{r.name}</span> },
           { key: "code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.code ?? "—"}</span> },
           { key: "students", header: "Students", render: (r) => studentsByClass.get(r.id) ?? 0 },
+          { key: "actions", header: "", render: (r) => canWrite ? (
+            <div className="flex justify-end">
+              <DeleteButton kind="class" id={r.id} label={r.name} what="class" />
+            </div>
+          ) : null },
+
         ]}
       />
     </>

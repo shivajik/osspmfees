@@ -7,6 +7,7 @@ import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { NewAccountButton } from "./_actions";
+import { DeleteButton } from "@/components/delete-button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 export default async function AccountsPage() {
@@ -51,6 +52,11 @@ export default async function AccountsPage() {
           { key: "ifsc", header: "IFSC", render: (r) => <span className="font-mono text-xs">{r.ifsc ?? "—"}</span> },
           { key: "opening", header: "Opening", render: (r) => formatCurrency(r.openingBal) },
           { key: "current", header: "Current", render: (r) => <span className="font-semibold">{formatCurrency(r.currentBal)}</span> },
+          { key: "actions", header: "", render: (r) => canWrite ? (
+            <div className="flex justify-end">
+              <DeleteButton kind="account" id={r.id} label={r.name} what="account" />
+            </div>
+          ) : null },
         ]}
       />
 

@@ -21,7 +21,7 @@ export function NewAccountButton() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="new-acc" type="submit" disabled={pending}>Create</Button>
+            <Button form="new-acc" type="submit" disabled={pending} loading={pending}>Create</Button>
           </>
         }
       >

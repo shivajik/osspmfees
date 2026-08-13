@@ -31,8 +31,8 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className={cn("relative card w-full max-w-lg p-0 shadow-2xl", className)}>
-        <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] p-5">
+      <div className={cn("relative card flex max-h-[88vh] w-full max-w-lg flex-col p-0 shadow-2xl", className)}>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] p-5">
           <div>
             <h3 className="text-base font-semibold">{title}</h3>
             {description && <p className="mt-1 text-xs text-[var(--color-fg-muted)]">{description}</p>}
@@ -41,9 +41,10 @@ export function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-5">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-[var(--color-border)] p-4">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">{children}</div>
+        {footer && <div className="flex shrink-0 justify-end gap-2 border-t border-[var(--color-border)] p-4">{footer}</div>}
       </div>
+
     </div>
   );
 }

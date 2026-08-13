@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { NewAcademicYearButton } from "./_actions";
+import { DeleteButton } from "@/components/delete-button";
 import { formatDate } from "@/lib/utils";
 
 export default async function AcademicYearsPage() {
@@ -31,6 +32,11 @@ export default async function AcademicYearsPage() {
           { key: "active", header: "Active", render: (r) => (
             r.isActive ? <Badge tone="success">Current</Badge> : <Badge>Past</Badge>
           )},
+          { key: "actions", header: "", render: (r) => user.instituteId ? (
+            <div className="flex justify-end">
+              <DeleteButton kind="academicYear" id={r.id} label={r.name} what="academic year" />
+            </div>
+          ) : null },
         ]}
       />
     </>

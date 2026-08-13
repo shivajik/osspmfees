@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EditStudentButton, NewStudentButton } from "./_actions";
+import { DeleteButton } from "@/components/delete-button";
 import { ImportStudentsButton } from "./_import";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Pagination } from "@/components/pagination";
@@ -105,6 +106,10 @@ export default async function StudentsPage({
                   classes={classes.map((c) => ({ id: c.id, name: c.name }))}
                   batches={batches.map((b) => ({ id: b.id, name: b.name, classId: b.classId }))}
                   years={years.map((y) => ({ id: y.id, name: y.name }))}
+                />
+                <DeleteButton
+                  kind="student" id={r.id} label={`${r.name} (${r.admissionNo})`} what="student"
+                  note="Fee assignments without receipts are removed along with the student."
                 />
               </div>
             ) : null

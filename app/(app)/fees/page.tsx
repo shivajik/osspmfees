@@ -13,6 +13,7 @@ import {
   EditAssignmentButton, EditStructureButton, EditPaymentButton,
 } from "./_actions";
 import Link from "next/link";
+import { DeleteButton } from "@/components/delete-button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Pagination } from "@/components/pagination";
@@ -233,6 +234,13 @@ export default async function FeesPage({
                   accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
                 />
               ) : null}
+              {canWriteStructure && (
+                <DeleteButton
+                  kind="feeAssignment" id={r.id}
+                  label={`${store.students.get(r.studentId)?.name ?? "assignment"} — ${store.feeStructures.get(r.feeStructureId)?.name ?? ""}`}
+                  what="fee assignment"
+                />
+              )}
             </div>
           )},
         ]}
@@ -301,6 +309,9 @@ export default async function FeesPage({
                         classes={classOptions}
                         years={yearOptions}
                       />
+                    )}
+                    {canWriteStructure && (
+                      <DeleteButton kind="feeStructure" id={fs.id} label={fs.name} what="fee structure" />
                     )}
                   </div>
                 </li>

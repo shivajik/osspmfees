@@ -44,7 +44,7 @@ export function EditStudentButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form={formId} type="submit" disabled={pending}>Save changes</Button>
+            <Button form={formId} type="submit" disabled={pending} loading={pending}>Save changes</Button>
           </>
         }
       >
@@ -120,7 +120,7 @@ export function NewStudentButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="new-student" type="submit" disabled={pending}>Enroll</Button>
+            <Button form="new-student" type="submit" disabled={pending} loading={pending}>Enroll</Button>
           </>
         }
       >

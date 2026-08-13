@@ -7,6 +7,7 @@ import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { NewExpenseButton, CategoryManagerButton, EditExpenseButton } from "./_actions";
+import { DeleteButton } from "@/components/delete-button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Pagination } from "@/components/pagination";
@@ -114,6 +115,14 @@ export default async function ExpensesPage({
               categories={catOptions}
               accounts={accOptions}
             />
+          ) : null },
+          { key: "delete", header: "", render: (r) => canWrite ? (
+            <div className="flex justify-end">
+              <DeleteButton
+                kind="expense" id={r.id} label={`${r.voucherNo} — ${r.description}`} what="expense"
+                note="The amount will be credited back to the linked account and its ledger entry removed."
+              />
+            </div>
           ) : null },
         ]}
       />

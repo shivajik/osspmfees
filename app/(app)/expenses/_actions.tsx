@@ -108,7 +108,7 @@ export function NewExpenseButton({ categories, accounts }: { categories: Cat[]; 
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="new-exp" type="submit" disabled={pending}>Save</Button>
+            <Button form="new-exp" type="submit" disabled={pending} loading={pending}>Save</Button>
           </>
         }
       >
@@ -149,7 +149,7 @@ export function EditExpenseButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form={`edit-exp-${row.id}`} type="submit" disabled={pending}>Save changes</Button>
+            <Button form={`edit-exp-${row.id}`} type="submit" disabled={pending} loading={pending}>Save changes</Button>
           </>
         }
       >
@@ -208,7 +208,7 @@ export function CategoryManagerButton({
           <div className="flex-1">
             <Field label="New category *"><Input name="name" required maxLength={80} placeholder="Electricity" /></Field>
           </div>
-          <Button type="submit" disabled={pending}>Add</Button>
+          <Button type="submit" disabled={pending} loading={pending}>Add</Button>
         </form>
 
         <ul className="mt-4 divide-y divide-[var(--color-border)] text-sm">
@@ -219,7 +219,7 @@ export function CategoryManagerButton({
                 <form className="flex items-center gap-2" action={async (fd) => run(updateCategory, fd)}>
                   <input type="hidden" name="id" value={c.id} />
                   <Input name="name" defaultValue={c.name} required maxLength={80} className="flex-1" />
-                  <Button size="sm" type="submit" disabled={pending}>Save</Button>
+                  <Button size="sm" type="submit" disabled={pending} loading={pending}>Save</Button>
                   <Button size="sm" variant="ghost" type="button" onClick={() => setEditing(null)}>Cancel</Button>
                 </form>
               ) : (

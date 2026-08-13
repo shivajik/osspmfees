@@ -1,4 +1,6 @@
+"use client";
 import * as React from "react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "outline";
@@ -7,6 +9,8 @@ type Size = "sm" | "md" | "lg" | "icon";
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
+  /** Shows a spinner and blocks further clicks while the action is running. */
+  loading?: boolean;
 }
 
 const variants: Record<Variant, string> = {
@@ -25,9 +29,11 @@ const sizes: Record<Size, string> = {
 };
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "primary", size = "md", ...props }, ref) => (
+  ({ className, variant = "primary", size = "md", loading = false, disabled, children, ...props }, ref) => (
     <button
       ref={ref}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] disabled:opacity-50 disabled:pointer-events-none",
         variants[variant],
@@ -35,7 +41,10 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className,
       )}
       {...props}
-    />
+    >
+      {loading && <Loader2 className={cn("animate-spin", size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4")} />}
+      {children}
+    </button>
   ),
 );
 Button.displayName = "Button";

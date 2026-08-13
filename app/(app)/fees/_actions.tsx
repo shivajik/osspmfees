@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CreditCard, Pencil, Plus, Users } from "lucide-react";
+import { CreditCard, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
@@ -56,6 +56,8 @@ export function CollectFeeButton({
   const [kind, setKind] = useState<"FULL" | "PARTIAL">("FULL");
   const [amount, setAmount] = useState<number>(balance);
   const [discount, setDiscount] = useState<number>(0);
+  const [heads, setHeads] = useState<Record<string, string>>({ [FEE_HEADS[0]]: String(balance) });
+
   const router = useRouter();
 
   const defaultAccount = accounts.find((a) => (mode === "CASH" ? a.type === "CASH" : a.type === "BANK"));
@@ -66,6 +68,11 @@ export function CollectFeeButton({
   const prevDue = previousDue ?? 0;
   const toPrevious = Math.min(settled, prevDue);
   const toCurrent = settled - toPrevious;
+  const headBreakup = Object.entries(heads)
+    .map(([head, v]) => ({ head, amount: Number(v) || 0 }))
+    .filter((h) => h.amount > 0);
+  const headsTotal = headBreakup.reduce((s, h) => s + h.amount, 0);
+
 
   return (
     <>
@@ -81,7 +88,7 @@ export function CollectFeeButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="collect-fee" type="submit" disabled={pending || settled <= 0}>Record payment</Button>
+            <Button form="collect-fee" type="submit" disabled={pending || settled <= 0} loading={pending}>Record payment</Button>
           </>
         }
       >
@@ -134,12 +141,50 @@ export function CollectFeeButton({
           <Field label="Mode *"><ModeSelect value={mode} onChange={setMode} /></Field>
 
           <div className="sm:col-span-2">
-            <Field label="Fee type / head *" hint="What this payment is being collected for">
-              <Select name="feeHead" defaultValue={FEE_HEADS[0]} required>
-                {FEE_HEADS.map((h) => <option key={h} value={h}>{h}</option>)}
-              </Select>
+            <Field
+              label="Fee types / heads *"
+              hint="Tick every head this payment covers and enter how much goes to each. The total must match the amount received plus discount."
+            >
+              <div className="flex max-h-56 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+                {FEE_HEADS.map((h) => {
+                  const checked = h in heads;
+                  return (
+                    <div key={h} className="flex items-center gap-2">
+                      <label className="flex flex-1 items-center gap-2 text-sm">
+                        <input
+                          type="checkbox" className="h-4 w-4" checked={checked}
+                          onChange={(e) =>
+                            setHeads((prev) => {
+                              const next = { ...prev };
+                              if (e.target.checked) next[h] = String(Object.keys(prev).length === 0 ? settled || "" : "");
+                              else delete next[h];
+                              return next;
+                            })
+                          }
+                        />
+                        {h}
+                      </label>
+                      <Input
+                        className="w-32" type="number" min="0" step="1" placeholder="Amount"
+                        disabled={!checked}
+                        value={heads[h] ?? ""}
+                        onChange={(e) => setHeads((prev) => ({ ...prev, [h]: e.target.value }))}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </Field>
+            <div className="mt-1 flex items-center justify-between text-xs">
+              <span className="text-[var(--color-fg-muted)]">Allocated across heads</span>
+              <span className={headsTotal === settled ? "font-medium text-emerald-600" : "font-medium text-amber-600"}>
+                {inr(headsTotal)} of {inr(settled)}
+              </span>
+            </div>
+            <input type="hidden" name="feeHeads" value={JSON.stringify(headBreakup)} />
+            <input type="hidden" name="feeHead" value={headBreakup.map((h) => h.head).join(", ")} />
           </div>
+
 
 
           <Field label="Discount / concession" hint="Counts as fees paid — no money is received">
@@ -223,7 +268,7 @@ export function EditPaymentButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form={`edit-pay-${payment.id}`} type="submit" disabled={pending}>Save changes</Button>
+            <Button form={`edit-pay-${payment.id}`} type="submit" disabled={pending} loading={pending}>Save changes</Button>
           </>
         }
       >
@@ -280,7 +325,7 @@ export function EditAssignmentButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form={`edit-assn-${assignment.id}`} type="submit" disabled={pending}>Save changes</Button>
+            <Button form={`edit-assn-${assignment.id}`} type="submit" disabled={pending} loading={pending}>Save changes</Button>
           </>
         }
       >
@@ -356,7 +401,7 @@ export function AssignFeesButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => { setOpen(false); setDone(null); setError(null); }}>Close</Button>
-            <Button form="assign-fees" type="submit" disabled={pending || noStructures}>Assign</Button>
+            <Button form="assign-fees" type="submit" disabled={pending || noStructures} loading={pending}>Assign</Button>
           </>
         }
       >
@@ -440,6 +485,83 @@ export function AssignFeesButton({
   );
 }
 
+type HeadRow = { head: string; amount: string };
+
+function HeadsEditor({ initial }: { initial?: { head: string; amount: number }[] }) {
+  const [rows, setRows] = useState<HeadRow[]>(
+    initial && initial.length
+      ? initial.map((i) => ({ head: i.head, amount: String(i.amount) }))
+      : [{ head: FEE_HEADS[0], amount: "" }],
+  );
+
+  const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const update = (i: number, patch: Partial<HeadRow>) =>
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+
+  const serialised = rows
+    .filter((r) => r.head.trim() && Number(r.amount) > 0)
+    .map((r) => `${r.head.replace(/[:,]/g, " ").trim()}:${Number(r.amount)}`)
+    .join(", ");
+
+  return (
+    <div className="sm:col-span-2 flex flex-col gap-2">
+      <p className="text-xs font-medium text-[var(--color-fg-muted)]">Fee heads *</p>
+      <div className="flex flex-col gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <Select
+              className="flex-1"
+              value={FEE_HEADS.includes(r.head as (typeof FEE_HEADS)[number]) ? r.head : "__custom"}
+              onChange={(e) => update(i, { head: e.target.value === "__custom" ? "" : e.target.value })}
+            >
+              {FEE_HEADS.map((h) => <option key={h} value={h}>{h}</option>)}
+              <option value="__custom">Custom head…</option>
+            </Select>
+            {!FEE_HEADS.includes(r.head as (typeof FEE_HEADS)[number]) && (
+              <Input
+                className="flex-1"
+                placeholder="Head name"
+                value={r.head}
+                maxLength={60}
+                onChange={(e) => update(i, { head: e.target.value })}
+              />
+            )}
+            <Input
+              className="w-32"
+              type="number" min="0" step="1" placeholder="Amount"
+              value={r.amount}
+              onChange={(e) => update(i, { amount: e.target.value })}
+            />
+            <Button
+              type="button" variant="ghost" size="sm"
+              aria-label="Remove head"
+              disabled={rows.length === 1}
+              onClick={() => setRows((rs) => rs.filter((_, idx) => idx !== i))}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+        <div className="flex items-center justify-between pt-1">
+          <Button
+            type="button" variant="ghost" size="sm"
+            onClick={() => setRows((rs) => [...rs, { head: FEE_HEADS[0], amount: "" }])}
+          >
+            <Plus className="h-3.5 w-3.5" />Add fee head
+          </Button>
+          <span className="text-sm">
+            <span className="text-[var(--color-fg-muted)]">Total </span>
+            <span className="font-semibold">{inr(total)}</span>
+          </span>
+        </div>
+      </div>
+      <input type="hidden" name="items" value={serialised} />
+      <input type="hidden" name="totalAmount" value={total} />
+      {total <= 0 && <p className="text-xs text-amber-600">Add at least one fee head with an amount.</p>}
+    </div>
+  );
+}
+
 function StructureFields({
   classes, years, structure,
 }: {
@@ -450,8 +572,9 @@ function StructureFields({
   return (
     <>
       {structure && <input type="hidden" name="id" value={structure.id} />}
-      <Field label="Name *"><Input name="name" required maxLength={120} defaultValue={structure?.name ?? ""} placeholder="Grade X Annual Fees" /></Field>
-      <Field label="Total amount *"><Input name="totalAmount" type="number" min="1" step="1" required defaultValue={structure?.totalAmount ?? ""} /></Field>
+      <div className="sm:col-span-2">
+        <Field label="Name *"><Input name="name" required maxLength={120} defaultValue={structure?.name ?? ""} placeholder="Grade X Annual Fees" /></Field>
+      </div>
       <Field label="Class *">
         <Select name="classId" required defaultValue={structure?.classId}>
           {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -462,21 +585,11 @@ function StructureFields({
           {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
         </Select>
       </Field>
-      <div className="sm:col-span-2">
-        <Field label="Heads" hint={`Format: Head:Amount, comma separated. Standard heads: ${FEE_HEADS.join(", ")}`}>
-          <datalist id="fee-heads">
-            {FEE_HEADS.map((h) => <option key={h} value={`${h}:`} />)}
-          </datalist>
-          <Input
-            list="fee-heads"
-            name="items" placeholder="Eligibility fees:500, I unit test:300"
-            defaultValue={structure ? structure.items.map((i) => `${i.head}:${i.amount}`).join(", ") : ""}
-          />
-        </Field>
-      </div>
+      <HeadsEditor initial={structure?.items} />
     </>
   );
 }
+
 
 export function NewStructureButton({
   classes, years,
@@ -496,7 +609,7 @@ export function NewStructureButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="new-fs" type="submit" disabled={pending}>Create</Button>
+            <Button form="new-fs" type="submit" disabled={pending} loading={pending}>Create</Button>
           </>
         }
       >
@@ -540,7 +653,7 @@ export function EditStructureButton({
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form={`edit-fs-${structure.id}`} type="submit" disabled={pending}>Save changes</Button>
+            <Button form={`edit-fs-${structure.id}`} type="submit" disabled={pending} loading={pending}>Save changes</Button>
           </>
         }
       >
