@@ -22,14 +22,21 @@ export default async function BatchesPage() {
     return raw ? normalizeClassName(raw) : "—";
   };
 
-  // Same division repeated per institute → collapse by class + division name.
+  const instituteName = (id: string) => store.institutes.get(id)?.name ?? "—";
+
+  // Institute admins: one row per division. Super admins: keep every institute's
+  // division but label it, so ownership is always visible.
   const rows = dedupeBy(
     [...scopedBatches].sort((a, b) => {
+      if (!user.instituteId) {
+        const byInst = instituteName(a.instituteId).localeCompare(instituteName(b.instituteId));
+        if (byInst !== 0) return byInst;
+      }
       const byClass = compareClassNames(store.classes.get(a.classId)?.name ?? "", store.classes.get(b.classId)?.name ?? "");
       if (byClass !== 0) return byClass;
       return a.name.localeCompare(b.name, undefined, { numeric: true });
     }),
-    (r) => (user.instituteId ? r.id : `${className(r.classId)}::${r.name.trim().toLowerCase()}`),
+    (r) => (user.instituteId ? r.id : `${r.instituteId}::${className(r.classId)}::${r.name.trim().toLowerCase()}`),
   );
 
   const classes = dedupeBy(
@@ -63,6 +70,11 @@ export default async function BatchesPage() {
         rowKey={(r) => r.id}
         rows={rows}
         columns={[
+          ...(user.instituteId ? [] : [{
+            key: "institute",
+            header: "Institute",
+            render: (r: (typeof rows)[number]) => instituteName(r.instituteId),
+          }]),
           { key: "name", header: "Division", render: (r) => <span className="font-medium">{r.name}</span> },
           { key: "class", header: "Class", render: (r) => className(r.classId) },
 
@@ -74,6 +86,7 @@ export default async function BatchesPage() {
           ) : null },
         ]}
       />
+
     </>
   );
 }

@@ -25,9 +25,14 @@ export default async function StudentsPage({
   const all = scopeByInstitute(store.students.values(), user.instituteId);
   const canWrite = hasPermission(perms, PERMISSIONS.STUDENT_WRITE) && !!user.instituteId;
 
-  const classes = user.instituteId ? scopeByInstitute(store.classes.values(), user.instituteId) : [];
-  const batches = user.instituteId ? scopeByInstitute(store.batches.values(), user.instituteId) : [];
-  const years = user.instituteId ? scopeByInstitute(store.academicYears.values(), user.instituteId) : [];
+  // Super admins have no institute scope — build filter options from every institute.
+  const classes = user.instituteId ? scopeByInstitute(store.classes.values(), user.instituteId) : Array.from(store.classes.values());
+  const batches = user.instituteId ? scopeByInstitute(store.batches.values(), user.instituteId) : Array.from(store.batches.values());
+  const years = user.instituteId ? scopeByInstitute(store.academicYears.values(), user.instituteId) : Array.from(store.academicYears.values());
+  const instituteName = (id: string) => store.institutes.get(id)?.name ?? "";
+  const optionLabel = (name: string, instituteId: string) =>
+    user.instituteId ? name : `${name} — ${instituteName(instituteId)}`;
+
 
   const q = params.q.toLowerCase();
   const filtered = all.filter((s) => {
@@ -65,8 +70,8 @@ export default async function StudentsPage({
       <ListToolbar
         placeholder="Search by name, admission #, guardian, phone…"
         filters={[
-          { key: "classId", label: "Class", options: classes.map((c) => ({ value: c.id, label: c.name })) },
-          { key: "batchId", label: "Division", options: batches.map((b) => ({ value: b.id, label: b.name })) },
+          { key: "classId", label: "Class", options: classes.map((c) => ({ value: c.id, label: optionLabel(c.name, c.instituteId) })) },
+          { key: "batchId", label: "Division", options: batches.map((b) => ({ value: b.id, label: optionLabel(b.name, b.instituteId) })) },
           { key: "status", label: "Status", options: [{ value: "ACTIVE", label: "Active" }, { value: "INACTIVE", label: "Inactive" }] },
         ]}
       />

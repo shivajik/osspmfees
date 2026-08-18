@@ -22,17 +22,24 @@ export default async function ClassesPage() {
     studentsByClass.set(s.classId, (studentsByClass.get(s.classId) ?? 0) + 1);
   }
 
-  // Across institutes the same class exists many times — collapse by name so the
-  // list never repeats, and aggregate the student counts of the merged rows.
+  // Institute admins see their own classes (deduped by id). Super admins see one
+  // row per institute so it is clear which institute each class belongs to.
   const merged = new Map<string, { row: (typeof scoped)[number]; students: number }>();
   for (const r of scoped) {
-    const key = user.instituteId ? r.id : normalizeClassName(r.name);
+    const key = user.instituteId ? r.id : `${r.instituteId}::${normalizeClassName(r.name)}`;
     const existing = merged.get(key);
     const students = studentsByClass.get(r.id) ?? 0;
     if (existing) existing.students += students;
     else merged.set(key, { row: r, students });
   }
-  const rows = Array.from(merged.values()).sort((a, b) => compareClassNames(a.row.name, b.row.name));
+  const instituteName = (id: string) => store.institutes.get(id)?.name ?? "—";
+  const rows = Array.from(merged.values()).sort((a, b) => {
+    if (!user.instituteId) {
+      const byInst = instituteName(a.row.instituteId).localeCompare(instituteName(b.row.instituteId));
+      if (byInst !== 0) return byInst;
+    }
+    return compareClassNames(a.row.name, b.row.name);
+  });
 
   return (
     <>
@@ -45,6 +52,11 @@ export default async function ClassesPage() {
         rowKey={(r) => r.row.id}
         rows={rows}
         columns={[
+          ...(user.instituteId ? [] : [{
+            key: "institute",
+            header: "Institute",
+            render: (r: (typeof rows)[number]) => instituteName(r.row.instituteId),
+          }]),
           { key: "name", header: "Class", render: (r) => <span className="font-medium">{normalizeClassName(r.row.name)}</span> },
           { key: "code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.row.code ?? "—"}</span> },
           { key: "students", header: "Students", render: (r) => r.students },
@@ -56,6 +68,7 @@ export default async function ClassesPage() {
 
         ]}
       />
+
 
     </>
   );
