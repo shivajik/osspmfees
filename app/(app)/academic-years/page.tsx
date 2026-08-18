@@ -8,11 +8,20 @@ import { Badge } from "@/components/ui/badge";
 import { NewAcademicYearButton } from "./_actions";
 import { DeleteButton } from "@/components/delete-button";
 import { formatDate } from "@/lib/utils";
+import { dedupeBy } from "@/lib/academics";
+
 
 export default async function AcademicYearsPage() {
   const user = await requireUser();
   if (!hasPermission(permissionsForRole(user.role), PERMISSIONS.ACADEMIC_YEAR_WRITE)) redirect("/dashboard");
-  const rows = scopeByInstitute(store.academicYears.values(), user.instituteId);
+  const scoped = scopeByInstitute(store.academicYears.values(), user.instituteId);
+  // Every institute has its own copy of the same year — collapse by name for the
+  // platform-wide (super admin) view so "2025-26" is listed once.
+  const rows = dedupeBy(
+    [...scoped].sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? "")),
+    (r) => (user.instituteId ? r.id : r.name.trim().toLowerCase()),
+  );
+
 
   return (
     <>

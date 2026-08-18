@@ -20,9 +20,17 @@ export async function createAcademicYear(fd: FormData): Promise<{ error?: string
   const parsed = schema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid data" };
 
+  const wanted = parsed.data.name.trim().toLowerCase();
+  for (const ay of store.academicYears.values()) {
+    if (ay.instituteId === user.instituteId && ay.name.trim().toLowerCase() === wanted) {
+      return { error: `Academic year "${parsed.data.name}" already exists for this institute.` };
+    }
+  }
+
   const now = new Date().toISOString();
   const id = uid("ay");
   const isActive = parsed.data.isActive === "on";
+
   if (isActive) {
     for (const ay of store.academicYears.values()) {
       if (ay.instituteId === user.instituteId) ay.isActive = false;

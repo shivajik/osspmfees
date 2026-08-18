@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Building2, Users, GraduationCap, School, CalendarRange,
-  ReceiptText, HandCoins, Wallet, Landmark, FileBarChart2, Settings, ShieldCheck, BookOpen,
+  ReceiptText, HandCoins, Wallet, Landmark, FileBarChart2, Settings, ShieldCheck, BookOpen, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PERMISSIONS, ROLES, hasPermission, type Permission } from "@/lib/auth/rbac";
@@ -105,6 +105,19 @@ export function Sidebar({ role, permissions }: { role: string; permissions: stri
           );
         })}
       </nav>
+      <div className="border-t border-[var(--color-border)] p-2">
+        <button
+          onClick={async () => {
+            await fetch("/api/auth/logout", { method: "POST" });
+            window.location.href = "/login";
+          }}
+          className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
+        >
+          <LogOut className="h-4 w-4" />
+          <span>Sign out</span>
+        </button>
+      </div>
     </aside>
   );
 }
+

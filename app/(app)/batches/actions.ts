@@ -24,7 +24,20 @@ export async function createBatch(fd: FormData): Promise<{ error?: string } | vo
   if (!cls || cls.instituteId !== user.instituteId) return { error: "Invalid class" };
   if (!ay || ay.instituteId !== user.instituteId) return { error: "Invalid academic year" };
 
+  const wanted = parsed.data.name.trim().toLowerCase();
+  for (const b of store.batches.values()) {
+    if (
+      b.instituteId === user.instituteId &&
+      b.classId === parsed.data.classId &&
+      b.academicYearId === parsed.data.academicYearId &&
+      b.name.trim().toLowerCase() === wanted
+    ) {
+      return { error: `Division "${parsed.data.name}" already exists for ${cls.name} in this academic year.` };
+    }
+  }
+
   const id = uid("bt");
+
   store.batches.set(id, {
     id, instituteId: user.instituteId,
     name: parsed.data.name, classId: parsed.data.classId, academicYearId: parsed.data.academicYearId,

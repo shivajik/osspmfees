@@ -46,7 +46,7 @@ export async function POST(req: Request) {
       entityId: user.id,
       ip: ip ?? undefined,
     });
-    await saveStore();
+    await saveStore({ mirror: false });
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
@@ -62,6 +62,6 @@ export async function POST(req: Request) {
     entityId: user.id,
     ip: ip ?? undefined,
   });
-  await saveStore();
+  await saveStore({ mirror: false });
   return NextResponse.json({ ok: true });
 }

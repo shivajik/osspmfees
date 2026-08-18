@@ -54,7 +54,7 @@ export async function createSession(user: User) {
     store.refreshTokens.delete(jti);
     return;
   }
-  await saveStore();
+  await saveStore({ mirror: false });
 }
 
 export async function destroySession() {
@@ -67,7 +67,7 @@ export async function destroySession() {
   jar.delete(ACCESS_COOKIE);
   jar.delete(REFRESH_COOKIE);
   jar.delete(CSRF_COOKIE);
-  await saveStore();
+  await saveStore({ mirror: false });
 }
 
 /** Validates the refresh cookie. Only rotates cookies when writes are allowed. */

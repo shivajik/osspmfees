@@ -57,10 +57,16 @@ function headers(key: string, extra?: HeadersInit): Headers {
   return headers;
 }
 
-export async function loadStore(): Promise<void> {
-  const cfg = config();
-  if (!cfg) return;
+/**
+ * The snapshot is large; re-fetching it on every request (auth checks hit this
+ * on each navigation) is the main source of login/logout latency. Keep the
+ * in-process copy for a short window and de-duplicate concurrent loads.
+ */
+const LOAD_TTL_MS = 10_000;
+let loadedAt = 0;
+let loading: Promise<void> | null = null;
 
+async function fetchStore(cfg: { url: string; key: string }): Promise<void> {
   const response = await fetch(
     `${cfg.url}/rest/v1/ledgerly_app_state?id=eq.${STATE_ID}&select=state`,
     { headers: headers(cfg.key), cache: "no-store" },
@@ -76,7 +82,24 @@ export async function loadStore(): Promise<void> {
   await saveStore();
 }
 
-export async function saveStore(): Promise<void> {
+export async function loadStore(options?: { force?: boolean }): Promise<void> {
+  const cfg = config();
+  if (!cfg) return;
+
+  if (!options?.force && Date.now() - loadedAt < LOAD_TTL_MS) return;
+  if (loading) return loading;
+
+  loading = fetchStore(cfg)
+    .then(() => {
+      loadedAt = Date.now();
+    })
+    .finally(() => {
+      loading = null;
+    });
+  return loading;
+}
+
+export async function saveStore(options?: { mirror?: boolean }): Promise<void> {
   const cfg = config();
   if (!cfg) return;
 
@@ -90,8 +113,13 @@ export async function saveStore(): Promise<void> {
     const detail = await response.text();
     throw new Error(`Unable to save application data (${response.status}): ${detail}`);
   }
+  loadedAt = Date.now();
 
   // Also project the state into the real relational tables (Student, FeePayment, ...)
   // so every entity is queryable/reportable outside the snapshot.
+  // Auth flows skip this: mirroring every table is slow and nothing about a
+  // login/logout changes business data.
+  if (options?.mirror === false) return;
   await mirrorToTables();
 }
+
