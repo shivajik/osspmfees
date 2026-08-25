@@ -1,11 +1,15 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
-import { LogOut, Search, User } from "lucide-react";
+import { LogOut, Loader2, Search, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export function Header({ user }: { user: { name: string; email: string; role: string; instituteName?: string | null } }) {
+  const [loggingOut, setLoggingOut] = useState(false);
+
   async function logout() {
+    setLoggingOut(true);
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
@@ -38,10 +42,11 @@ export function Header({ user }: { user: { name: string; email: string; role: st
         </Link>
         <button
           onClick={logout}
+          disabled={loggingOut}
           title="Sign out"
-          className="rounded-md p-2 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
+          className="rounded-md p-2 text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)] disabled:opacity-60 disabled:pointer-events-none"
         >
-          <LogOut className="h-4 w-4" />
+          {loggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
         </button>
         <User className="hidden" />
       </div>

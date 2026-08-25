@@ -5,7 +5,7 @@ import { PERMISSIONS, hasPermission, permissionsForRole, type Permission } from 
 import { pushAudit, store } from "@/lib/db/store";
 import { saveStore } from "@/lib/db/persistence";
 
-export const DELETABLE = [
+const DELETABLE = [
   "class",
   "batch",
   "academicYear",

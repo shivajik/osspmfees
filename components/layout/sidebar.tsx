@@ -1,9 +1,10 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Building2, Users, GraduationCap, School, CalendarRange,
-  ReceiptText, HandCoins, Wallet, Landmark, FileBarChart2, Settings, ShieldCheck, BookOpen, LogOut,
+  ReceiptText, HandCoins, Wallet, Landmark, FileBarChart2, Settings, ShieldCheck, BookOpen, LogOut, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PERMISSIONS, ROLES, hasPermission, type Permission } from "@/lib/auth/rbac";
@@ -57,6 +58,14 @@ const groups: { label: string; items: NavItem[] }[] = [
 export function Sidebar({ role, permissions }: { role: string; permissions: string[] }) {
   const pathname = usePathname();
   const isSuper = role === ROLES.SUPER_ADMIN;
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
   return (
     <aside className="hidden md:flex md:w-64 md:shrink-0 md:flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex h-14 items-center gap-2 border-b border-[var(--color-border)] px-4">
@@ -106,13 +115,11 @@ export function Sidebar({ role, permissions }: { role: string; permissions: stri
         })}
         <div className="px-2">
           <button
-            onClick={async () => {
-              await fetch("/api/auth/logout", { method: "POST" });
-              window.location.href = "/login";
-            }}
-            className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)] disabled:opacity-60 disabled:pointer-events-none"
           >
-            <LogOut className="h-4 w-4" />
+            {loggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
             <span>Sign out</span>
           </button>
         </div>

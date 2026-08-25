@@ -38,7 +38,7 @@ export default function ForgotPasswordPage() {
         </CardHeader>
         <form onSubmit={onSubmit} className="mt-4 space-y-4">
           <Input type="email" required placeholder="you@institute.edu" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Button disabled={busy} className="w-full">{busy ? "Sending..." : "Send reset link"}</Button>
+          <Button type="submit" loading={busy} className="w-full">Send reset link</Button>
           {msg && <p className="rounded-md bg-emerald-50 p-2 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">{msg}</p>}
           {preview && (
             <p className="text-xs text-[var(--color-fg-muted)]">

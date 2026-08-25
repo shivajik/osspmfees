@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ export function ChangePasswordGate({ email }: { email: string }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,6 +41,7 @@ export function ChangePasswordGate({ email }: { email: string }) {
   }
 
   async function signOut() {
+    setSigningOut(true);
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
     router.refresh();
@@ -65,10 +68,16 @@ export function ChangePasswordGate({ email }: { email: string }) {
             <Input type="password" required autoComplete="new-password" placeholder="New password" value={next} onChange={(e) => setNext(e.target.value)} />
             <Input type="password" required autoComplete="new-password" placeholder="Confirm new password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
             <p className="text-xs text-[var(--color-fg-muted)]">Min 10 chars, upper + lower + digit.</p>
-            <Button disabled={busy} className="w-full">{busy ? "Saving..." : "Update password"}</Button>
+            <Button type="submit" loading={busy} disabled={signingOut} className="w-full">Update password</Button>
             {err && <p className="rounded-md bg-rose-50 p-2 text-xs text-rose-700 dark:bg-rose-900/40 dark:text-rose-200">{err}</p>}
             <p className="text-center text-xs">
-              <button type="button" onClick={signOut} className="text-[var(--color-fg-muted)] underline">
+              <button
+                type="button"
+                onClick={signOut}
+                disabled={busy || signingOut}
+                className="inline-flex items-center gap-1.5 text-[var(--color-fg-muted)] underline disabled:opacity-60 disabled:pointer-events-none"
+              >
+                {signingOut && <Loader2 className="h-3 w-3 animate-spin" />}
                 Sign out instead
               </button>
             </p>
