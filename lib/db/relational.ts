@@ -71,6 +71,7 @@ function tables(): Array<{ name: string; rows: Row[] }> {
         id: u.id, email: u.email, name: u.name, passwordHash: u.passwordHash,
         role: u.role, instituteId: u.instituteId, active: u.active,
         failedLoginCount: u.failedLoginCount, lockedUntil: ts(u.lockedUntil),
+        mustChangePassword: u.mustChangePassword,
         createdAt: ts(u.createdAt), updatedAt: ts(u.updatedAt),
       })),
     },

@@ -28,6 +28,8 @@ export interface User {
   active: boolean;
   failedLoginCount: number;
   lockedUntil: number | null;
+  /** Forces a password change on next login (seeded accounts, admin-assigned temp passwords). */
+  mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -187,7 +189,8 @@ function seed(): Store {
   const mk = (email: string, name: string, role: Role, instituteId: string | null): User => ({
     id: `usr_${email.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`,
     email, name, passwordHash: pw, role, instituteId,
-    active: true, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now,
+    active: true, failedLoginCount: 0, lockedUntil: null, mustChangePassword: true,
+    createdAt: now, updatedAt: now,
   });
 
   // Super admin for OSSPM Mandal
@@ -270,7 +273,14 @@ export function importStoreState(value: unknown): void {
       (store[key] as Map<string, unknown>).clear();
       for (const entry of entries) {
         if (Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string") {
-          (store[key] as Map<string, unknown>).set(entry[0], entry[1]);
+          let record = entry[1];
+          // Legacy snapshots predate `mustChangePassword`; default missing
+          // values to true so accounts persisted before this field existed
+          // are still forced to rotate off the shared seed password.
+          if (key === "users" && record && typeof record === "object" && typeof (record as User).mustChangePassword !== "boolean") {
+            record = { ...(record as User), mustChangePassword: true };
+          }
+          (store[key] as Map<string, unknown>).set(entry[0], record);
         }
       }
     }

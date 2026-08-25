@@ -48,6 +48,7 @@ export async function createUser(fd: FormData): Promise<{ error?: string } | voi
     active: true,
     failedLoginCount: 0,
     lockedUntil: null,
+    mustChangePassword: true,
     createdAt: now,
     updatedAt: now,
   });

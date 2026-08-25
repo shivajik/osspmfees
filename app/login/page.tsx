@@ -2,7 +2,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input, Field, Select } from "@/components/ui/input";
+import { Input, Field } from "@/components/ui/input";
 import { Building2, GraduationCap, Loader2, ShieldCheck, Wallet } from "lucide-react";
 
 export default function LoginPage() {
@@ -13,41 +13,13 @@ export default function LoginPage() {
   );
 }
 
-const branches = [
-  { code: "VGGSS", name: "Late. Vimalbai G. Gaikwad Secondary School" },
-  { code: "KDSS", name: "Late. Kishanrao Dhanve Secondary School" },
-  { code: "SSR", name: "Secondary School, Rui" },
-  { code: "SSSS", name: "Shree Shaneshwar Secondary School" },
-  { code: "OBM", name: "Om Balak Mandir" },
-  { code: "OSS", name: "Om Secondary School" },
-  { code: "GPES", name: "Late. Gangadhar Patil English School" },
-  { code: "SESR", name: "Sai English School, Rui" },
-  { code: "THS", name: "The Tesla High School" },
-  { code: "VGHSS", name: "Late. Vimalbai G. Gaikwad Sec & Higher Secondary School" },
-  { code: "AJC", name: "Adarsh Junior College" },
-  { code: "SSHSS", name: "Shree Shaneshwar Higher Secondary School" },
-];
-
-const roleOptions = [
-  { role: "admin", label: "Admin" },
-  { role: "accountant", label: "Accountant" },
-  { role: "cashier", label: "Cashier" },
-];
-
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const [email, setEmail] = useState("super@osspmandal.com");
-  const [password, setPassword] = useState("Password123!");
-  const [selectedBranch, setSelectedBranch] = useState(branches[0]?.code ?? "VGGSS");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  function useAccount(nextEmail: string) {
-    setEmail(nextEmail);
-    setPassword("Password123!");
-    setError(null);
-  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -123,7 +95,7 @@ function LoginInner() {
             </div>
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">Use the OSSPM seeded accounts below or your own credentials.</p>
+          <p className="mt-1 text-sm text-[var(--color-fg-muted)]">Enter your OSSPM account credentials.</p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <Field label="Email" htmlFor="email">
@@ -141,53 +113,6 @@ function LoginInner() {
               <a href="/forgot-password" className="text-[var(--color-fg-muted)] hover:underline">Forgot password?</a>
             </p>
           </form>
-
-          <div className="mt-6 space-y-4">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-widest text-[var(--color-fg-subtle)]">Quick access</p>
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-2 w-full justify-between text-xs"
-                onClick={() => useAccount("super@osspmandal.com")}
-              >
-                <span>OSSPM Super Admin</span>
-                <span className="font-normal text-[var(--color-fg-muted)]">super@osspmandal.com</span>
-              </Button>
-            </div>
-
-            <div className="card p-3">
-              <Field label="Branch demo account" htmlFor="branch">
-                <Select id="branch" value={selectedBranch} onChange={(event) => setSelectedBranch(event.target.value)}>
-                  {branches.map((branch) => (
-                    <option key={branch.code} value={branch.code}>{branch.code} — {branch.name}</option>
-                  ))}
-                </Select>
-              </Field>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                {roleOptions.map((option) => {
-                  const branchSlug = selectedBranch.toLowerCase();
-                  return (
-                    <Button
-                      key={option.role}
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="px-2 text-[11px]"
-                      onClick={() => useAccount(`${option.role}.${branchSlug}@osspmandal.com`)}
-                    >
-                      {option.label}
-                    </Button>
-                  );
-                })}
-              </div>
-              <p className="mt-3 break-all text-[11px] text-[var(--color-fg-subtle)]">
-                Selected email pattern: admin/accountant/cashier.&lt;branch-code&gt;@osspmandal.com
-              </p>
-            </div>
-
-            <p className="text-[11px] text-[var(--color-fg-subtle)]">Password for every seeded account: Password123!</p>
-          </div>
         </div>
       </div>
     </div>

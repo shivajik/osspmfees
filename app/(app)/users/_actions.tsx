@@ -155,7 +155,7 @@ export function NewUserButton({
           </Field>
           <div className="sm:col-span-2">
             <Field label="Temporary password" hint="Minimum 10 characters, mixed case & number">
-              <Input name="password" type="text" minLength={10} required defaultValue="Password123!" />
+              <Input name="password" type="text" minLength={10} required />
             </Field>
           </div>
           {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}

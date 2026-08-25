@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
@@ -6,6 +7,7 @@ import { store } from "@/lib/db/store";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+  if (user.mustChangePassword) redirect("/change-password");
   const permissions = permissionsForRole(user.role);
   const instituteName = user.instituteId ? store.institutes.get(user.instituteId)?.name ?? null : null;
 

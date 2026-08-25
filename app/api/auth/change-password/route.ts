@@ -29,6 +29,7 @@ export async function POST(req: Request) {
   const stored = store.users.get(user.id);
   if (!stored) return NextResponse.json({ error: "User missing" }, { status: 400 });
   stored.passwordHash = await hashPassword(parsed.data.newPassword);
+  stored.mustChangePassword = false;
   stored.updatedAt = new Date().toISOString();
 
   pushAudit({

@@ -13,15 +13,7 @@ cp .env.example .env
 bun run dev
 ```
 
-Open http://localhost:3000 and sign in with any demo account:
-
-| Role | Email | Password |
-|---|---|---|
-| Super Admin | super@ledgerly.app | Password123! |
-| Institute Admin | admin@greenwood.edu | Password123! |
-| Accountant | accountant@greenwood.edu | Password123! |
-| Cashier | cashier@greenwood.edu | Password123! |
-| Viewer | viewer@greenwood.edu | Password123! |
+Open http://localhost:3000 and sign in. Seeded accounts and their credentials are defined in `lib/db/store.ts` (not documented here since they're real, working logins) — check with whoever manages the deployment for access. Every seeded account is created with `mustChangePassword: true`, so first sign-in forces a password change.
 
 The preview uses an in-memory store (`lib/db/store.ts`) so it runs without a DB. To wire real data, apply `prisma/migrations/0001_init/migration.sql` in the Supabase SQL editor and swap the store for Prisma repositories — the shapes match 1:1.
 

@@ -30,6 +30,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Invalid token" }, { status: 400 });
 
   user.passwordHash = await hashPassword(password);
+  user.mustChangePassword = false;
   user.updatedAt = new Date().toISOString();
   user.failedLoginCount = 0;
   user.lockedUntil = null;
