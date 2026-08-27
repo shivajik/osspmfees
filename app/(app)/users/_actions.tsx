@@ -1,11 +1,11 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Plus, Unlock, UserCheck, UserX } from "lucide-react";
+import { Lock, Pencil, Plus, Unlock, UserCheck, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
-import { createUser, setUserAccess } from "./actions";
+import { createUser, setUserAccess, updateUser } from "./actions";
 import { ROLES } from "@/lib/auth/rbac";
 
 export function UserAccessButtons({
@@ -158,6 +158,74 @@ export function NewUserButton({
               <Input name="password" type="text" minLength={10} required />
             </Field>
           </div>
+          {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
+        </form>
+      </Modal>
+    </>
+  );
+}
+
+export function EditUserButton({
+  isSuper,
+  institutes,
+  row,
+}: {
+  isSuper: boolean;
+  institutes: { id: string; name: string }[];
+  row: { id: string; name: string; email: string; role: string; instituteId: string | null };
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  const roles = isSuper
+    ? Object.values(ROLES)
+    : [ROLES.INSTITUTE_ADMIN, ROLES.ACCOUNTANT, ROLES.CASHIER, ROLES.VIEWER];
+
+  return (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => setOpen(true)} title="Edit user">
+        <Pencil className="h-3.5 w-3.5" />Edit
+      </Button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Edit ${row.name}`}
+        description={isSuper ? "Fix a mis-assigned institute or role without recreating the account." : undefined}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button form={`edit-user-${row.id}`} type="submit" disabled={pending} loading={pending}>Save changes</Button>
+          </>
+        }
+      >
+        <form
+          id={`edit-user-${row.id}`}
+          action={async (fd) => {
+            setPending(true); setError(null);
+            const r = await updateUser(fd);
+            setPending(false);
+            if (r?.error) return setError(r.error);
+            setOpen(false);
+            router.refresh();
+          }}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        >
+          <input type="hidden" name="userId" value={row.id} />
+          <Field label="Full name"><Input name="name" required maxLength={120} defaultValue={row.name} /></Field>
+          <Field label="Email"><Input name="email" type="email" required maxLength={200} defaultValue={row.email} /></Field>
+          <Field label="Role">
+            <Select name="role" defaultValue={row.role} disabled={!isSuper && row.role === ROLES.SUPER_ADMIN}>
+              {roles.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
+            </Select>
+          </Field>
+          <Field label="Institute" hint={isSuper ? undefined : "Only a super admin can move a user to another institute"}>
+            <Select name="instituteId" defaultValue={row.instituteId ?? ""} disabled={!isSuper}>
+              {isSuper && <option value="">Platform (Super Admin)</option>}
+              {institutes.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+            </Select>
+          </Field>
           {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
       </Modal>

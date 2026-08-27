@@ -65,6 +65,63 @@ export async function createUser(fd: FormData): Promise<{ error?: string } | voi
   await saveStore();
 }
 
+const updateSchema = z.object({
+  userId: z.string().min(1),
+  name: z.string().min(2).max(120),
+  email: z.string().email().max(200),
+  role: z.enum([ROLES.SUPER_ADMIN, ROLES.INSTITUTE_ADMIN, ROLES.ACCOUNTANT, ROLES.CASHIER, ROLES.VIEWER]),
+  instituteId: z.string().optional().or(z.literal("")),
+});
+
+/** Edits an existing user's name/email/role/institute — fixes a super admin's mis-assignment without recreating the account. */
+export async function updateUser(fd: FormData): Promise<{ error?: string } | void> {
+  const actor = await requireUser();
+  if (!hasPermission(permissionsForRole(actor.role), PERMISSIONS.USER_MANAGE)) {
+    return { error: "Not authorized" };
+  }
+
+  const parsed = updateSchema.safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid data" };
+
+  const { userId, name, email, role } = parsed.data;
+  let { instituteId } = parsed.data;
+
+  const target = store.users.get(userId);
+  if (!target) return { error: "User not found" };
+  if (target.id === actor.id) return { error: "You cannot edit your own account here" };
+
+  const isSuper = actor.role === ROLES.SUPER_ADMIN;
+  if (!isSuper) {
+    if (target.instituteId !== actor.instituteId) return { error: "Not authorized" };
+    if (role === ROLES.SUPER_ADMIN || target.role === ROLES.SUPER_ADMIN) return { error: "Not authorized" };
+    instituteId = actor.instituteId ?? "";
+  }
+  if (role !== ROLES.SUPER_ADMIN && !instituteId) return { error: "Institute is required" };
+
+  const existing = findUserByEmail(email);
+  if (existing && existing.id !== userId) return { error: "Email already exists" };
+
+  const nextInstituteId = role === ROLES.SUPER_ADMIN ? null : instituteId ?? null;
+  const before = { name: target.name, email: target.email, role: target.role, instituteId: target.instituteId };
+
+  target.name = name;
+  target.email = email;
+  target.role = role;
+  target.instituteId = nextInstituteId;
+  target.updatedAt = new Date().toISOString();
+
+  pushAudit({
+    instituteId: actor.instituteId,
+    actorId: actor.id,
+    actorEmail: actor.email,
+    action: "user.update",
+    entity: "User",
+    entityId: target.id,
+    meta: { before, after: { name, email, role, instituteId: nextInstituteId } },
+  });
+  await saveStore();
+}
+
 const statusSchema = z.object({
   userId: z.string().min(1),
   op: z.enum(["LOCK", "UNLOCK", "DISABLE", "ENABLE"]),

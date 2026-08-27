@@ -20,7 +20,7 @@ export default async function StudentsPage({
   if (!hasPermission(perms, PERMISSIONS.STUDENT_READ)) redirect("/dashboard");
 
   const sp = await searchParams;
-  const params = parseListParams(sp, { filterKeys: ["classId", "batchId", "status"] });
+  const params = parseListParams(sp, { filterKeys: user.instituteId ? ["classId", "batchId", "status"] : ["instituteId", "classId", "batchId", "status"] });
 
   const all = scopeByInstitute(store.students.values(), user.instituteId);
   const canWrite = hasPermission(perms, PERMISSIONS.STUDENT_WRITE) && !!user.instituteId;
@@ -29,13 +29,14 @@ export default async function StudentsPage({
   const classes = user.instituteId ? scopeByInstitute(store.classes.values(), user.instituteId) : Array.from(store.classes.values());
   const batches = user.instituteId ? scopeByInstitute(store.batches.values(), user.instituteId) : Array.from(store.batches.values());
   const years = user.instituteId ? scopeByInstitute(store.academicYears.values(), user.instituteId) : Array.from(store.academicYears.values());
-  const instituteName = (id: string) => store.institutes.get(id)?.name ?? "";
+  const instituteName = (id: string) => store.institutes.get(id)?.name ?? "—";
   const optionLabel = (name: string, instituteId: string) =>
     user.instituteId ? name : `${name} — ${instituteName(instituteId)}`;
-
+  const instituteOptions = user.instituteId ? [] : Array.from(store.institutes.values()).map((i) => ({ id: i.id, name: i.name }));
 
   const q = params.q.toLowerCase();
   const filtered = all.filter((s) => {
+    if (params.filters.instituteId && s.instituteId !== params.filters.instituteId) return false;
     if (params.filters.classId && s.classId !== params.filters.classId) return false;
     if (params.filters.batchId && s.batchId !== params.filters.batchId) return false;
     if (params.filters.status && s.status !== params.filters.status) return false;
@@ -70,6 +71,7 @@ export default async function StudentsPage({
       <ListToolbar
         placeholder="Search by name, admission #, guardian, phone…"
         filters={[
+          ...(user.instituteId ? [] : [{ key: "instituteId", label: "Institute", options: instituteOptions.map((i) => ({ value: i.id, label: i.name })) }]),
           { key: "classId", label: "Class", options: classes.map((c) => ({ value: c.id, label: optionLabel(c.name, c.instituteId) })) },
           { key: "batchId", label: "Division", options: batches.map((b) => ({ value: b.id, label: optionLabel(b.name, b.instituteId) })) },
           { key: "status", label: "Status", options: [{ value: "ACTIVE", label: "Active" }, { value: "INACTIVE", label: "Inactive" }] },
@@ -80,6 +82,7 @@ export default async function StudentsPage({
         rows={page.rows}
         empty="No students match your filters"
         columns={[
+          ...(user.instituteId ? [] : [{ key: "institute", header: "Institute", render: (r: (typeof page.rows)[number]) => instituteName(r.instituteId) }]),
           { key: "adm", header: "Admission #", render: (r) => <span className="font-mono text-xs">{r.admissionNo}</span> },
           { key: "name", header: "Student", render: (r) => (
             <div>
