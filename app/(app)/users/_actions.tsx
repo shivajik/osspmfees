@@ -108,36 +108,40 @@ export function NewUserButton({
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const router = useRouter();
 
   const roles = isSuper
     ? Object.values(ROLES)
     : [ROLES.INSTITUTE_ADMIN, ROLES.ACCOUNTANT, ROLES.CASHIER, ROLES.VIEWER];
 
+  const close = () => { setOpen(false); setError(null); setNotice(null); };
+
   return (
     <>
       <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" />Invite user</Button>
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={close}
         title="Create user"
-        description="Passwords are set to the temporary value shown. User can change it after login."
+        description="An invite email is sent with their temporary password. They'll set their own password on first login."
         footer={
           <>
-            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button form="new-user-form" type="submit" disabled={pending} loading={pending}>Create</Button>
+            <Button variant="ghost" onClick={close}>{notice ? "Close" : "Cancel"}</Button>
+            {!notice && <Button form="new-user-form" type="submit" disabled={pending} loading={pending}>Create</Button>}
           </>
         }
       >
         <form
           id="new-user-form"
           action={async (fd) => {
-            setPending(true); setError(null);
-            const r = await createUser(fd);
+            setPending(true); setError(null); setNotice(null);
+            const r = await withMinDelay(createUser(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
-            setOpen(false);
             router.refresh();
+            if (r?.emailWarning) return setNotice(r.emailWarning);
+            close();
           }}
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
         >
@@ -160,6 +164,7 @@ export function NewUserButton({
             </Field>
           </div>
           {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
+          {notice && <p className="sm:col-span-2 text-xs text-amber-600">{notice}</p>}
         </form>
       </Modal>
     </>

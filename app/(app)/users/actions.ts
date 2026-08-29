@@ -1,11 +1,13 @@
 "use server";
 import { z } from "zod";
+import { headers } from "next/headers";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, ROLES, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { pushAudit, store, findUserByEmail } from "@/lib/db/store";
 import { hashPassword } from "@/lib/auth/password";
 import { uid } from "@/lib/utils";
 import { saveStore } from "@/lib/db/persistence";
+import { isEmailConfigured, sendUserInviteEmail } from "@/lib/email/mailer";
 
 const schema = z.object({
   name: z.string().min(2).max(120),
@@ -15,7 +17,7 @@ const schema = z.object({
   password: z.string().min(10).max(200).regex(/[A-Z]/, "Uppercase required").regex(/[a-z]/, "Lowercase required").regex(/\d/, "Digit required"),
 });
 
-export async function createUser(fd: FormData): Promise<{ error?: string } | void> {
+export async function createUser(fd: FormData): Promise<{ error?: string; emailWarning?: string } | void> {
   const actor = await requireUser();
   if (!hasPermission(permissionsForRole(actor.role), PERMISSIONS.USER_MANAGE)) {
     return { error: "Not authorized" };
@@ -63,6 +65,23 @@ export async function createUser(fd: FormData): Promise<{ error?: string } | voi
     meta: { role, email },
   });
   await saveStore();
+
+  if (!isEmailConfigured()) return { emailWarning: "Email isn't configured — share the temporary password with them directly." };
+
+  try {
+    const h = await headers();
+    const host = h.get("host");
+    const origin = process.env.APP_URL?.replace(/\/$/, "") || `${host?.includes("localhost") ? "http" : "https"}://${host}`;
+    const instituteName = instituteId ? store.institutes.get(instituteId)?.name : undefined;
+    await sendUserInviteEmail({
+      to: email, name, email, tempPassword: password,
+      loginUrl: `${origin}/login`,
+      instituteName, role,
+    });
+  } catch (error) {
+    console.error("User invite email failed", error);
+    return { emailWarning: "Account created, but the invite email failed to send — share the temporary password with them directly." };
+  }
 }
 
 const updateSchema = z.object({
