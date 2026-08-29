@@ -12,6 +12,7 @@ import { isEmailConfigured, sendUserInviteEmail } from "@/lib/email/mailer";
 const schema = z.object({
   name: z.string().min(2).max(120),
   email: z.string().email().max(200),
+  phone: z.string().max(20).optional().or(z.literal("")),
   role: z.enum([ROLES.SUPER_ADMIN, ROLES.INSTITUTE_ADMIN, ROLES.ACCOUNTANT, ROLES.CASHIER, ROLES.VIEWER]),
   instituteId: z.string().optional().or(z.literal("")),
   password: z.string().min(10).max(200).regex(/[A-Z]/, "Uppercase required").regex(/[a-z]/, "Lowercase required").regex(/\d/, "Digit required"),
@@ -26,7 +27,7 @@ export async function createUser(fd: FormData): Promise<{ error?: string; emailW
   const parsed = schema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid data" };
 
-  const { name, email, role, password } = parsed.data;
+  const { name, email, phone, role, password } = parsed.data;
   let { instituteId } = parsed.data;
 
   const isSuper = actor.role === ROLES.SUPER_ADMIN;
@@ -44,6 +45,7 @@ export async function createUser(fd: FormData): Promise<{ error?: string; emailW
     id,
     name,
     email,
+    phone: phone || undefined,
     passwordHash: await hashPassword(password),
     role,
     instituteId: role === ROLES.SUPER_ADMIN ? null : instituteId ?? null,
@@ -88,6 +90,7 @@ const updateSchema = z.object({
   userId: z.string().min(1),
   name: z.string().min(2).max(120),
   email: z.string().email().max(200),
+  phone: z.string().max(20).optional().or(z.literal("")),
   role: z.enum([ROLES.SUPER_ADMIN, ROLES.INSTITUTE_ADMIN, ROLES.ACCOUNTANT, ROLES.CASHIER, ROLES.VIEWER]),
   instituteId: z.string().optional().or(z.literal("")),
 });
@@ -102,7 +105,7 @@ export async function updateUser(fd: FormData): Promise<{ error?: string } | voi
   const parsed = updateSchema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid data" };
 
-  const { userId, name, email, role } = parsed.data;
+  const { userId, name, email, phone, role } = parsed.data;
   let { instituteId } = parsed.data;
 
   const target = store.users.get(userId);
@@ -121,10 +124,11 @@ export async function updateUser(fd: FormData): Promise<{ error?: string } | voi
   if (existing && existing.id !== userId) return { error: "Email already exists" };
 
   const nextInstituteId = role === ROLES.SUPER_ADMIN ? null : instituteId ?? null;
-  const before = { name: target.name, email: target.email, role: target.role, instituteId: target.instituteId };
+  const before = { name: target.name, email: target.email, phone: target.phone, role: target.role, instituteId: target.instituteId };
 
   target.name = name;
   target.email = email;
+  target.phone = phone || undefined;
   target.role = role;
   target.instituteId = nextInstituteId;
   target.updatedAt = new Date().toISOString();
@@ -136,7 +140,7 @@ export async function updateUser(fd: FormData): Promise<{ error?: string } | voi
     action: "user.update",
     entity: "User",
     entityId: target.id,
-    meta: { before, after: { name, email, role, instituteId: nextInstituteId } },
+    meta: { before, after: { name, email, phone: target.phone, role, instituteId: nextInstituteId } },
   });
   await saveStore();
 }

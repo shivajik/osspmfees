@@ -1,4 +1,5 @@
 import "server-only";
+import { after } from "next/server";
 import { exportStoreState, importStoreState } from "@/lib/db/store";
 import { mirrorToTables } from "@/lib/db/relational";
 import { isProd } from "@/lib/env";
@@ -119,7 +120,9 @@ export async function saveStore(options?: { mirror?: boolean }): Promise<void> {
   // so every entity is queryable/reportable outside the snapshot.
   // Auth flows skip this: mirroring every table is slow and nothing about a
   // login/logout changes business data.
+  // Scheduled via `after()` rather than awaited: mirroring the full dataset across
+  // 15 tables can take many seconds, and none of it should hold up the user's action.
   if (options?.mirror === false) return;
-  await mirrorToTables();
+  after(() => mirrorToTables());
 }
 

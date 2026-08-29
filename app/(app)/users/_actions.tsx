@@ -147,6 +147,7 @@ export function NewUserButton({
         >
           <Field label="Full name"><Input name="name" required maxLength={120} /></Field>
           <Field label="Email"><Input name="email" type="email" required maxLength={200} /></Field>
+          <Field label="Mobile number" hint="Optional"><Input name="phone" maxLength={20} /></Field>
           <Field label="Role">
             <Select name="role" defaultValue={roles[0]}>
               {roles.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
@@ -178,7 +179,7 @@ export function EditUserButton({
 }: {
   isSuper: boolean;
   institutes: { id: string; name: string }[];
-  row: { id: string; name: string; email: string; role: string; instituteId: string | null };
+  row: { id: string; name: string; email: string; phone?: string; role: string; instituteId: string | null };
 }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -221,6 +222,7 @@ export function EditUserButton({
           <input type="hidden" name="userId" value={row.id} />
           <Field label="Full name"><Input name="name" required maxLength={120} defaultValue={row.name} /></Field>
           <Field label="Email"><Input name="email" type="email" required maxLength={200} defaultValue={row.email} /></Field>
+          <Field label="Mobile number" hint="Optional"><Input name="phone" maxLength={20} defaultValue={row.phone ?? ""} /></Field>
           <Field label="Role">
             <Select name="role" defaultValue={row.role} disabled={!isSuper && row.role === ROLES.SUPER_ADMIN}>
               {roles.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}

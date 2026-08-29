@@ -74,7 +74,7 @@ export default async function UsersPage({
             <EditUserButton
               isSuper={isSuper}
               institutes={instituteOptions}
-              row={{ id: r.id, name: r.name, email: r.email, role: r.role, instituteId: r.instituteId }}
+              row={{ id: r.id, name: r.name, email: r.email, phone: r.phone, role: r.role, instituteId: r.instituteId }}
             />
           )},
           { key: "actions", header: "", render: (r) => (
