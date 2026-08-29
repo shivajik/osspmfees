@@ -60,25 +60,25 @@ export function EditStudentButton({
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
         >
           <input type="hidden" name="id" value={student.id} />
-          <Field label="Admission number"><Input name="admissionNo" required maxLength={40} defaultValue={student.admissionNo} /></Field>
-          <Field label="Full name"><Input name="name" required maxLength={120} defaultValue={student.name} /></Field>
+          <Field label="Admission number *"><Input name="admissionNo" required maxLength={40} defaultValue={student.admissionNo} /></Field>
+          <Field label="Full name *"><Input name="name" required maxLength={120} defaultValue={student.name} /></Field>
           <Field label="Guardian"><Input name="guardianName" maxLength={120} defaultValue={student.guardianName ?? ""} /></Field>
           <Field label="Phone"><Input name="phone" maxLength={40} defaultValue={student.phone ?? ""} /></Field>
           <div className="sm:col-span-2">
             <Field label="Email"><Input name="email" type="email" maxLength={200} defaultValue={student.email ?? ""} /></Field>
           </div>
-          <Field label="Class">
+          <Field label="Class *">
             <Select name="classId" value={classId} onChange={(e) => setClassId(e.target.value)} required>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
-          <Field label="Division">
+          <Field label="Division *">
             <Select name="batchId" defaultValue={student.batchId} required key={classId}>
               {filteredBatches.length === 0 && <option value="">— no divisions —</option>}
               {filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </Select>
           </Field>
-          <Field label="Academic year">
+          <Field label="Academic year *">
             <Select name="academicYearId" defaultValue={student.academicYearId} required>
               {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
             </Select>
@@ -101,7 +101,7 @@ export function NewStudentButton({
 }: {
   classes: { id: string; name: string }[];
   batches: { id: string; name: string; classId: string }[];
-  years: { id: string; name: string }[];
+  years: { id: string; name: string; isActive?: boolean }[];
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +109,7 @@ export function NewStudentButton({
   const [classId, setClassId] = useState(classes[0]?.id ?? "");
   const router = useRouter();
   const filteredBatches = batches.filter((b) => b.classId === classId);
+  const defaultYearId = years.find((y) => y.isActive)?.id ?? years[0]?.id ?? "";
 
   return (
     <>
@@ -135,28 +136,28 @@ export function NewStudentButton({
           }}
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
         >
-          <Field label="Admission number"><Input name="admissionNo" required maxLength={40} /></Field>
-          <Field label="Full name"><Input name="name" required maxLength={120} /></Field>
+          <Field label="Admission number *"><Input name="admissionNo" required maxLength={40} /></Field>
+          <Field label="Full name *"><Input name="name" required maxLength={120} /></Field>
           <Field label="Guardian"><Input name="guardianName" maxLength={120} /></Field>
           <Field label="Phone"><Input name="phone" maxLength={40} /></Field>
           <div className="sm:col-span-2">
             <Field label="Email"><Input name="email" type="email" maxLength={200} /></Field>
           </div>
-          <Field label="Class">
+          <Field label="Class *">
             <Select name="classId" value={classId} onChange={(e) => setClassId(e.target.value)} required>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
-          <Field label="Division">
+          <Field label="Division *">
             <Select name="batchId" required>
               {filteredBatches.length === 0 && <option value="">— no divisions —</option>}
               {filteredBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </Select>
           </Field>
           <div className="sm:col-span-2">
-            <Field label="Academic year">
-              <Select name="academicYearId" required>
-                {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+            <Field label="Academic year *">
+              <Select name="academicYearId" defaultValue={defaultYearId} required>
+                {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.isActive ? " (current)" : ""}</option>)}
               </Select>
             </Field>
           </div>

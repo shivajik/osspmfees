@@ -9,10 +9,11 @@ import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
-  AssignFeesButton, CollectFeeButton, NewStructureButton,
+  AssignFeesButton, NewStructureButton,
   EditAssignmentButton, EditStructureButton, EditPaymentButton,
 } from "./_actions";
 import Link from "next/link";
+import { CreditCard } from "lucide-react";
 import { DeleteButton } from "@/components/delete-button";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListToolbar } from "@/components/list-toolbar";
@@ -53,7 +54,6 @@ export default async function FeesPage({
   const payments = scopeByInstitute(store.feePayments.values(), scope)
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
     .slice(0, 10);
-  const accounts = scope ? scopeByInstitute(store.accounts.values(), scope) : Array.from(store.accounts.values());
   const classes = scope ? scopeByInstitute(store.classes.values(), scope) : Array.from(store.classes.values());
   const years = scope ? scopeByInstitute(store.academicYears.values(), scope) : Array.from(store.academicYears.values());
   const optionLabel = (name: string, instituteId: string) => (scope ? name : `${name} — ${instituteName(instituteId)}`);
@@ -236,13 +236,12 @@ export default async function FeesPage({
                 />
               )}
               {canCollect && r.status !== "PAID" && !r.carriedForwardTo ? (
-                <CollectFeeButton
-                  assignmentId={r.id}
-                  studentName={store.students.get(r.studentId)?.name ?? ""}
-                  balance={assignmentBalance(r)}
-                  previousDue={Math.max(0, (r.previousBalance ?? 0) - r.totalPaid)}
-                  accounts={accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
-                />
+                <Link
+                  href={`/fees/collect/${r.id}`}
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-border)]"
+                >
+                  <CreditCard className="h-3.5 w-3.5" />Collect
+                </Link>
               ) : null}
               {canWriteStructure && (
                 <DeleteButton

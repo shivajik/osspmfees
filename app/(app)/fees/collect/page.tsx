@@ -8,8 +8,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ListToolbar } from "@/components/list-toolbar";
-import { CollectFeeButton } from "../_actions";
-import { ArrowLeft, ReceiptText } from "lucide-react";
+import { ArrowLeft, CreditCard, ReceiptText } from "lucide-react";
 
 export default async function CollectCounterPage({
   searchParams,
@@ -32,7 +31,6 @@ export default async function CollectCounterPage({
   const classes = scopeByInstitute(store.classes.values(), scope);
   const students = scopeByInstitute(store.students.values(), scope).filter((s) => s.status === "ACTIVE");
   const assignments = scopeByInstitute(store.feeAssignments.values(), scope);
-  const accounts = scopeByInstitute(store.accounts.values(), scope).map((a) => ({ id: a.id, name: a.name, type: a.type }));
 
   const dueByStudent = new Map<string, number>();
   for (const a of assignments) {
@@ -206,7 +204,6 @@ export default async function CollectCounterPage({
               <ul className="divide-y divide-[var(--color-border)]">
                 {studentAssignments.map((a) => {
                   const balance = assignmentBalance(a);
-                  const prevDue = Math.max(0, (a.previousBalance ?? 0) - a.totalPaid);
                   return (
                     <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                       <div className="min-w-0">
@@ -225,13 +222,12 @@ export default async function CollectCounterPage({
                           <Badge tone={a.status === "PAID" ? "success" : a.status === "PARTIAL" ? "info" : "warning"}>{a.status}</Badge>
                         </div>
                         {balance > 0 && (
-                          <CollectFeeButton
-                            assignmentId={a.id}
-                            studentName={selectedStudent.name}
-                            balance={balance}
-                            previousDue={prevDue}
-                            accounts={accounts}
-                          />
+                          <Link
+                            href={`/fees/collect/${a.id}`}
+                            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-[var(--color-brand)] px-3 text-xs font-medium text-white transition-colors hover:brightness-110"
+                          >
+                            <CreditCard className="h-3.5 w-3.5" />Collect
+                          </Link>
                         )}
                       </div>
                     </li>

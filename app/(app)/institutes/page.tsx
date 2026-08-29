@@ -8,11 +8,30 @@ import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EditInstituteButton, NewInstituteButton } from "./_actions";
 import { formatDate } from "@/lib/utils";
+import { ListToolbar } from "@/components/list-toolbar";
+import { Pagination } from "@/components/pagination";
+import { parseListParams, paginate } from "@/lib/list-params";
 
-export default async function InstitutesPage() {
+export default async function InstitutesPage({
+  searchParams,
+}: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireUser();
   if (user.role !== ROLES.SUPER_ADMIN) redirect("/dashboard");
-  const rows = Array.from(store.institutes.values());
+  const all = Array.from(store.institutes.values());
+
+  const sp = await searchParams;
+  const params = parseListParams(sp);
+  const q = params.q.toLowerCase();
+  const filtered = all.filter((i) => {
+    if (!q) return true;
+    return (
+      i.name.toLowerCase().includes(q) ||
+      i.code.toLowerCase().includes(q) ||
+      (i.address ?? "").toLowerCase().includes(q) ||
+      (i.email ?? "").toLowerCase().includes(q)
+    );
+  });
+  const page = paginate(filtered, params.page, params.pageSize);
 
   return (
     <>
@@ -21,9 +40,11 @@ export default async function InstitutesPage() {
         description="Provision, suspend, or archive tenants on the platform."
         actions={<NewInstituteButton />}
       />
+      <ListToolbar placeholder="Search by name, code, address or email…" />
       <DataTable
         rowKey={(r) => r.id}
-        rows={rows}
+        rows={page.rows}
+        empty="No institutes match your search"
         columns={[
           { key: "name", header: "Institute", render: (r) => (
             <div>
@@ -44,6 +65,7 @@ export default async function InstitutesPage() {
           )},
         ]}
       />
+      <Pagination page={page.page} totalPages={page.totalPages} total={page.total} pageSize={page.pageSize} />
     </>
   );
 }

@@ -25,13 +25,16 @@ export default async function StudentsPage({
   const all = scopeByInstitute(store.students.values(), user.instituteId);
   const canWrite = hasPermission(perms, PERMISSIONS.STUDENT_WRITE) && !!user.instituteId;
 
-  // Super admins have no institute scope — build filter options from every institute.
-  const classes = user.instituteId ? scopeByInstitute(store.classes.values(), user.instituteId) : Array.from(store.classes.values());
-  const batches = user.instituteId ? scopeByInstitute(store.batches.values(), user.instituteId) : Array.from(store.batches.values());
-  const years = user.instituteId ? scopeByInstitute(store.academicYears.values(), user.instituteId) : Array.from(store.academicYears.values());
+  // Super admins have no institute scope, but once they've filtered to one
+  // institute, narrow the Class/Division/Year pickers to just that institute
+  // instead of mixing in every institute's records.
+  const effectiveScope = user.instituteId ?? params.filters.instituteId ?? null;
+  const classes = effectiveScope ? scopeByInstitute(store.classes.values(), effectiveScope) : Array.from(store.classes.values());
+  const batches = effectiveScope ? scopeByInstitute(store.batches.values(), effectiveScope) : Array.from(store.batches.values());
+  const years = effectiveScope ? scopeByInstitute(store.academicYears.values(), effectiveScope) : Array.from(store.academicYears.values());
   const instituteName = (id: string) => store.institutes.get(id)?.name ?? "—";
   const optionLabel = (name: string, instituteId: string) =>
-    user.instituteId ? name : `${name} — ${instituteName(instituteId)}`;
+    effectiveScope ? name : `${name} — ${instituteName(instituteId)}`;
   const instituteOptions = user.instituteId ? [] : Array.from(store.institutes.values()).map((i) => ({ id: i.id, name: i.name }));
 
   const q = params.q.toLowerCase();
@@ -63,7 +66,7 @@ export default async function StudentsPage({
             <NewStudentButton
               classes={classes.map((c) => ({ id: c.id, name: c.name }))}
               batches={batches.map((b) => ({ id: b.id, name: b.name, classId: b.classId }))}
-              years={years.map((y) => ({ id: y.id, name: y.name }))}
+              years={years.map((y) => ({ id: y.id, name: y.name, isActive: y.isActive }))}
             />
           </div>
         ) : null}
