@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Input, Field } from "@/components/ui/input";
 import { createClass } from "./actions";
+import { withMinDelay } from "@/lib/utils";
 
 export function NewClassButton() {
   const [open, setOpen] = useState(false);
@@ -28,7 +29,7 @@ export function NewClassButton() {
           id="new-class"
           action={async (fd) => {
             setPending(true); setError(null);
-            const r = await createClass(fd);
+            const r = await withMinDelay(createClass(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
             setOpen(false); router.refresh();

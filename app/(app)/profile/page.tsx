@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ChangePasswordForm } from "./_change-password";
+import { EditProfileForm } from "./_edit-profile";
 import { store } from "@/lib/db/store";
 import { formatDate } from "@/lib/utils";
 
@@ -17,14 +18,10 @@ export default async function ProfilePage() {
           <CardHeader>
             <div>
               <CardTitle>Account</CardTitle>
-              <CardDescription>Read-only account details</CardDescription>
+              <CardDescription>Email is your sign-in ID and can&apos;t be changed here</CardDescription>
             </div>
           </CardHeader>
-          <dl className="mt-2 space-y-2 text-sm">
-            <div className="flex justify-between gap-4">
-              <dt className="text-[var(--color-fg-muted)]">Name</dt>
-              <dd className="font-medium">{user.name}</dd>
-            </div>
+          <dl className="mb-4 space-y-2 text-sm">
             <div className="flex justify-between gap-4">
               <dt className="text-[var(--color-fg-muted)]">Email</dt>
               <dd className="font-medium">{user.email}</dd>
@@ -42,6 +39,9 @@ export default async function ProfilePage() {
               <dd className="font-medium">{formatDate(user.createdAt)}</dd>
             </div>
           </dl>
+          <div className="border-t border-[var(--color-border)] pt-4">
+            <EditProfileForm name={user.name} phone={user.phone} />
+          </div>
         </Card>
         <Card>
           <CardHeader>

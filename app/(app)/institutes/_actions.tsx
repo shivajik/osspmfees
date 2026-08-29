@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
 import { createInstitute, updateInstitute } from "./actions";
+import { withMinDelay } from "@/lib/utils";
 
 export type InstituteRow = {
   id: string; name: string; code: string;
@@ -41,7 +42,7 @@ export function EditInstituteButton({ institute }: { institute: InstituteRow }) 
           id={formId}
           action={async (fd) => {
             setPending(true); setError(null);
-            const result = await updateInstitute(fd);
+            const result = await withMinDelay(updateInstitute(fd));
             setPending(false);
             if (result?.error) return setError(result.error);
             setOpen(false);
@@ -51,7 +52,9 @@ export function EditInstituteButton({ institute }: { institute: InstituteRow }) 
         >
           <input type="hidden" name="id" value={institute.id} />
           <Field label="Name"><Input name="name" required maxLength={120} defaultValue={institute.name} /></Field>
-          <Field label="Code" hint="Short unique identifier"><Input name="code" required maxLength={20} defaultValue={institute.code} /></Field>
+          <Field label="Code" hint="Fixed after creation — can't be changed">
+            <Input value={institute.code} disabled readOnly className="cursor-not-allowed opacity-60" />
+          </Field>
           <Field label="Email"><Input name="email" type="email" maxLength={200} defaultValue={institute.email ?? ""} /></Field>
           <Field label="Phone"><Input name="phone" maxLength={40} defaultValue={institute.phone ?? ""} /></Field>
           <div className="sm:col-span-2">
@@ -95,7 +98,7 @@ export function NewInstituteButton() {
           id="new-institute-form"
           action={async (fd) => {
             setPending(true); setError(null);
-            const result = await createInstitute(fd);
+            const result = await withMinDelay(createInstitute(fd));
             setPending(false);
             if (result?.error) return setError(result.error);
             setOpen(false);

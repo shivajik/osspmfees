@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { deleteRecord, type DeletableKind } from "@/app/(app)/delete-actions";
+import { withMinDelay } from "@/lib/utils";
 
 export function DeleteButton({
   kind,
@@ -40,7 +41,7 @@ export function DeleteButton({
     const fd = new FormData();
     fd.set("kind", kind);
     fd.set("id", id);
-    const r = await deleteRecord(fd);
+    const r = await withMinDelay(deleteRecord(fd));
     setPending(false);
     if (r?.error) return setError(r.error);
     setOpen(false);

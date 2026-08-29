@@ -77,7 +77,7 @@ export default async function BatchesPage({
         actions={canWrite ? (
           <NewBatchButton
             classes={classes.map((c) => ({ id: c.id, name: normalizeClassName(c.name) }))}
-            years={years.map((y) => ({ id: y.id, name: y.name }))}
+            years={years.map((y) => ({ id: y.id, name: y.name, isActive: y.isActive }))}
           />
         ) : null}
       />

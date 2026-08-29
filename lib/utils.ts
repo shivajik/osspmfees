@@ -17,3 +17,9 @@ export function formatDate(d: Date | string) {
 export function uid(prefix = "id") {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
 }
+
+/** Keeps a loading spinner visible for at least `ms` even if the action resolves faster, so it's never just an imperceptible flash. */
+export async function withMinDelay<T>(promise: Promise<T>, ms = 400): Promise<T> {
+  const [result] = await Promise.all([promise, new Promise((r) => setTimeout(r, ms))]);
+  return result;
+}

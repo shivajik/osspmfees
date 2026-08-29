@@ -2,9 +2,13 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...props }, ref) => (
+  ({ className, type, onWheel, ...props }, ref) => (
     <input
       ref={ref}
+      type={type}
+      // A focused number input silently changes value on page scroll (Chrome/Firefox) —
+      // blur it on wheel so scrolling the page never edits a field the user didn't touch.
+      onWheel={type === "number" ? (e) => { e.currentTarget.blur(); onWheel?.(e); } : onWheel}
       className={cn(
         "input-base w-full focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-brand)]/30 placeholder:text-[var(--color-fg-subtle)]",
         className,

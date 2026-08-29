@@ -6,14 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
 import { createBatch } from "./actions";
+import { withMinDelay } from "@/lib/utils";
 
 export function NewBatchButton({
   classes, years,
-}: { classes: { id: string; name: string }[]; years: { id: string; name: string }[] }) {
+}: { classes: { id: string; name: string }[]; years: { id: string; name: string; isActive?: boolean }[] }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const router = useRouter();
+  const defaultYearId = years.find((y) => y.isActive)?.id ?? years[0]?.id ?? "";
 
   return (
     <>
@@ -33,7 +35,7 @@ export function NewBatchButton({
           id="new-batch"
           action={async (fd) => {
             setPending(true); setError(null);
-            const r = await createBatch(fd);
+            const r = await withMinDelay(createBatch(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
             setOpen(false); router.refresh();
@@ -47,8 +49,8 @@ export function NewBatchButton({
             </Select>
           </Field>
           <Field label="Academic year">
-            <Select name="academicYearId" required>
-              {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+            <Select name="academicYearId" defaultValue={defaultYearId} required>
+              {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.isActive ? " (current)" : ""}</option>)}
             </Select>
           </Field>
           {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}

@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
 import { createUser, setUserAccess, updateUser } from "./actions";
 import { ROLES } from "@/lib/auth/rbac";
+import { withMinDelay } from "@/lib/utils";
 
 export function UserAccessButtons({
   user,
@@ -25,7 +26,7 @@ export function UserAccessButtons({
     fd.set("op", op);
     fd.set("hours", String(hours));
     fd.set("reason", reason);
-    const r = await setUserAccess(fd);
+    const r = await withMinDelay(setUserAccess(fd));
     setPending(false);
     if (r?.error) return setError(r.error);
     setOpen(null);

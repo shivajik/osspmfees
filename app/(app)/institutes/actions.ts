@@ -46,7 +46,9 @@ export async function createInstitute(fd: FormData): Promise<{ error?: string } 
   await saveStore();
 }
 
-const updateSchema = schema.extend({
+// Code is a stable identifier set once at creation — never accepted on update,
+// even if a caller sends one (defense in depth beyond the disabled UI field).
+const updateSchema = schema.omit({ code: true }).extend({
   id: z.string().min(1),
   status: z.enum(["ACTIVE", "SUSPENDED"]),
 });
@@ -57,18 +59,12 @@ export async function updateInstitute(fd: FormData): Promise<{ error?: string } 
 
   const parsed = updateSchema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid data" };
-  const { id, name, code, email, phone, address, status } = parsed.data;
+  const { id, name, email, phone, address, status } = parsed.data;
 
   const inst = store.institutes.get(id);
   if (!inst) return { error: "Institute not found" };
-  for (const other of store.institutes.values()) {
-    if (other.id !== id && other.code.toLowerCase() === code.toLowerCase()) {
-      return { error: "Code already in use" };
-    }
-  }
 
   inst.name = name;
-  inst.code = code.toUpperCase();
   inst.email = email || undefined;
   inst.phone = phone || undefined;
   inst.address = address || undefined;
