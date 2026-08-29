@@ -52,6 +52,22 @@ export default async function ProfilePage() {
           </CardHeader>
           <ChangePasswordForm />
         </Card>
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Security</CardTitle>
+              <CardDescription>Session hardening</CardDescription>
+            </div>
+          </CardHeader>
+          <ul className="space-y-2 text-sm text-[var(--color-fg-muted)]">
+            <li>✓ HTTP-only, SameSite=Lax session cookies</li>
+            <li>✓ Access + rotating refresh tokens (JWT / HS256)</li>
+            <li>✓ Bcrypt password hashing (12 rounds)</li>
+            <li>✓ Auto-lock after 5 failed logins (15 min cooldown)</li>
+            <li>✓ Per-IP rate limiting on API routes</li>
+            <li>✓ Security headers (X-Frame-Options, nosniff, referrer, permissions)</li>
+          </ul>
+        </Card>
       </div>
     </>
   );

@@ -51,7 +51,7 @@ const groups: { label: string; items: NavItem[] }[] = [
   },
   {
     label: "Account",
-    items: [{ href: "/settings", label: "Settings", icon: Settings }],
+    items: [{ href: "/profile", label: "Settings", icon: Settings }],
   },
 ];
 
