@@ -25,15 +25,18 @@ export default async function ExpensesPage({
 
   const all = scopeByInstitute(store.expenses.values(), scope)
     .sort((a, b) => b.spentAt.localeCompare(a.spentAt));
-  const categories = scope ? scopeByInstitute(store.expenseCategories.values(), scope) : [];
-  const accounts = scope ? scopeByInstitute(store.accounts.values(), scope) : [];
-  const catOptions = categories.map((c) => ({ id: c.id, name: c.name }));
+  const categories = scope ? scopeByInstitute(store.expenseCategories.values(), scope) : Array.from(store.expenseCategories.values());
+  const accounts = scope ? scopeByInstitute(store.accounts.values(), scope) : Array.from(store.accounts.values());
+  const instituteName = (id: string) => store.institutes.get(id)?.name ?? "—";
+  const instituteOptions = scope ? [] : Array.from(store.institutes.values()).map((i) => ({ id: i.id, name: i.name }));
+  const catOptions = categories.map((c) => ({ id: c.id, name: scope ? c.name : `${c.name} — ${instituteName(c.instituteId)}` }));
   const accOptions = accounts.map((a) => ({ id: a.id, name: a.name, type: a.type }));
 
   const sp = await searchParams;
-  const params = parseListParams(sp, { filterKeys: ["categoryId", "mode", "status"] });
+  const params = parseListParams(sp, { filterKeys: scope ? ["categoryId", "mode", "status"] : ["categoryId", "mode", "status", "instituteId"] });
   const q = params.q.toLowerCase();
   const filtered = all.filter((r) => {
+    if (params.filters.instituteId && r.instituteId !== params.filters.instituteId) return false;
     if (params.filters.categoryId && r.categoryId !== params.filters.categoryId) return false;
     if (params.filters.mode && r.mode !== params.filters.mode) return false;
     if (params.filters.status && r.status !== params.filters.status) return false;
@@ -78,7 +81,8 @@ export default async function ExpensesPage({
       <ListToolbar
         placeholder="Search by description, voucher # or cheque #…"
         filters={[
-          { key: "categoryId", label: "Category", options: categories.map((c) => ({ value: c.id, label: c.name })) },
+          ...(scope ? [] : [{ key: "instituteId", label: "Institute", options: instituteOptions.map((i) => ({ value: i.id, label: i.name })) }]),
+          { key: "categoryId", label: "Category", options: catOptions.map((c) => ({ value: c.id, label: c.name })) },
           { key: "mode", label: "Mode", options: ["CASH","BANK","CARD","UPI","CHEQUE","ONLINE"].map((m) => ({ value: m, label: m })) },
           { key: "status", label: "Status", options: [{ value: "PAID", label: "Paid" }, { value: "DRAFT", label: "Draft" }] },
         ]}
@@ -88,6 +92,11 @@ export default async function ExpensesPage({
         rows={page.rows}
         empty="No expenses match your filters"
         columns={[
+          ...(scope ? [] : [{
+            key: "institute",
+            header: "Institute",
+            render: (r: (typeof page.rows)[number]) => instituteName(r.instituteId),
+          }]),
           { key: "voucher", header: "Voucher", render: (r) => <span className="font-mono text-xs">{r.voucherNo}</span> },
           { key: "date", header: "Date", render: (r) => formatDate(r.spentAt) },
           { key: "desc", header: "Description", render: (r) => (

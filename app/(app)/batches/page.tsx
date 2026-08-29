@@ -7,9 +7,13 @@ import { DataTable } from "@/components/ui/table";
 import { NewBatchButton } from "./_actions";
 import { DeleteButton } from "@/components/delete-button";
 import { compareClassNames, dedupeBy, normalizeClassName } from "@/lib/academics";
+import { ListToolbar } from "@/components/list-toolbar";
+import { Pagination } from "@/components/pagination";
+import { parseListParams, paginate } from "@/lib/list-params";
 
-
-export default async function BatchesPage() {
+export default async function BatchesPage({
+  searchParams,
+}: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireUser();
   const perms = permissionsForRole(user.role);
   if (!hasPermission(perms, PERMISSIONS.BATCH_READ)) redirect("/dashboard");
@@ -26,7 +30,7 @@ export default async function BatchesPage() {
 
   // Institute admins: one row per division. Super admins: keep every institute's
   // division but label it, so ownership is always visible.
-  const rows = dedupeBy(
+  const sorted = dedupeBy(
     [...scopedBatches].sort((a, b) => {
       if (!user.instituteId) {
         const byInst = instituteName(a.instituteId).localeCompare(instituteName(b.instituteId));
@@ -38,6 +42,7 @@ export default async function BatchesPage() {
     }),
     (r) => (user.instituteId ? r.id : `${r.instituteId}::${className(r.classId)}::${r.name.trim().toLowerCase()}`),
   );
+  const instituteOptions = user.instituteId ? [] : Array.from(store.institutes.values()).map((i) => ({ id: i.id, name: i.name }));
 
   const classes = dedupeBy(
     (user.instituteId
@@ -54,6 +59,16 @@ export default async function BatchesPage() {
   );
 
 
+  const sp = await searchParams;
+  const params = parseListParams(sp, { filterKeys: user.instituteId ? [] : ["instituteId"] });
+  const q = params.q.toLowerCase();
+  const filtered = sorted.filter((r) => {
+    if (params.filters.instituteId && r.instituteId !== params.filters.instituteId) return false;
+    if (!q) return true;
+    return r.name.toLowerCase().includes(q) || className(r.classId).toLowerCase().includes(q);
+  });
+  const page = paginate(filtered, params.page, params.pageSize);
+
   return (
     <>
       <PageHeader
@@ -66,18 +81,22 @@ export default async function BatchesPage() {
           />
         ) : null}
       />
+      <ListToolbar
+        placeholder="Search by division or class…"
+        filters={user.instituteId ? [] : [{ key: "instituteId", label: "Institute", options: instituteOptions.map((i) => ({ value: i.id, label: i.name })) }]}
+      />
       <DataTable
         rowKey={(r) => r.id}
-        rows={rows}
+        rows={page.rows}
+        empty="No divisions match your filters"
         columns={[
           ...(user.instituteId ? [] : [{
             key: "institute",
             header: "Institute",
-            render: (r: (typeof rows)[number]) => instituteName(r.instituteId),
+            render: (r: (typeof sorted)[number]) => instituteName(r.instituteId),
           }]),
           { key: "name", header: "Division", render: (r) => <span className="font-medium">{r.name}</span> },
           { key: "class", header: "Class", render: (r) => className(r.classId) },
-
           { key: "year", header: "Year", render: (r) => store.academicYears.get(r.academicYearId)?.name ?? "—" },
           { key: "actions", header: "", render: (r) => canWrite ? (
             <div className="flex justify-end">
@@ -86,7 +105,7 @@ export default async function BatchesPage() {
           ) : null },
         ]}
       />
-
+      <Pagination page={page.page} totalPages={page.totalPages} total={page.total} pageSize={page.pageSize} />
     </>
   );
 }

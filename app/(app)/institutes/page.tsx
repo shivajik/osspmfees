@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { ROLES } from "@/lib/auth/rbac";
 import { store } from "@/lib/db/store";
@@ -26,7 +27,7 @@ export default async function InstitutesPage() {
         columns={[
           { key: "name", header: "Institute", render: (r) => (
             <div>
-              <div className="font-medium">{r.name}</div>
+              <Link href={`/institutes/${r.id}`} className="font-medium text-[var(--color-brand)] hover:underline">{r.name}</Link>
               <div className="text-xs text-[var(--color-fg-muted)]">{r.email ?? "—"}</div>
             </div>
           )},

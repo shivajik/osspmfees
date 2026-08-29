@@ -37,7 +37,7 @@ export function UserAccessButtons({
   return (
     <div className="flex flex-wrap items-center justify-end gap-1">
       {user.locked ? (
-        <Button size="sm" variant="ghost" disabled={pending} onClick={() => run("UNLOCK")}>
+        <Button size="sm" variant="ghost" disabled={pending} loading={pending} onClick={() => run("UNLOCK")}>
           <Unlock className="h-3.5 w-3.5" />Unlock
         </Button>
       ) : (
@@ -46,11 +46,11 @@ export function UserAccessButtons({
         </Button>
       )}
       {user.active ? (
-        <Button size="sm" variant="ghost" disabled={pending} onClick={() => run("DISABLE")}>
+        <Button size="sm" variant="ghost" disabled={pending} loading={pending} onClick={() => run("DISABLE")}>
           <UserX className="h-3.5 w-3.5" />Disable
         </Button>
       ) : (
-        <Button size="sm" variant="ghost" disabled={pending} onClick={() => run("ENABLE")}>
+        <Button size="sm" variant="ghost" disabled={pending} loading={pending} onClick={() => run("ENABLE")}>
           <UserCheck className="h-3.5 w-3.5" />Enable
         </Button>
       )}

@@ -7,7 +7,13 @@ import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
 import { createAccount } from "./actions";
 
-export function NewAccountButton() {
+export function NewAccountButton({
+  isSuper,
+  institutes,
+}: {
+  isSuper?: boolean;
+  institutes?: { id: string; name: string }[];
+}) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +42,16 @@ export function NewAccountButton() {
           }}
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
         >
+          {isSuper && (
+            <div className="sm:col-span-2">
+              <Field label="Institute">
+                <Select name="instituteId" required defaultValue="">
+                  <option value="" disabled>Select an institute…</option>
+                  {institutes?.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </Select>
+              </Field>
+            </div>
+          )}
           <Field label="Name"><Input name="name" required maxLength={120} /></Field>
           <Field label="Type">
             <Select name="type" value={type} onChange={(e) => setType(e.target.value as "BANK" | "CASH")}>

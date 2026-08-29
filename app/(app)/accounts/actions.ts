@@ -1,7 +1,7 @@
 "use server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
-import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
+import { PERMISSIONS, ROLES, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import { pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
 import { saveStore } from "@/lib/db/persistence";
@@ -13,31 +13,36 @@ const schema = z.object({
   accountNo: z.string().max(40).optional().or(z.literal("")),
   ifsc: z.string().max(20).optional().or(z.literal("")),
   openingBal: z.coerce.number().min(0).max(1_000_000_000),
+  instituteId: z.string().optional().or(z.literal("")),
 });
 
 export async function createAccount(fd: FormData): Promise<{ error?: string } | void> {
   const user = await requireUser();
   const perms = permissionsForRole(user.role);
   if (!hasPermission(perms, PERMISSIONS.BANK_WRITE)) return { error: "Not authorized" };
-  if (!user.instituteId) return { error: "Institute scope required" };
 
   const parsed = schema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
 
+  const isSuper = user.role === ROLES.SUPER_ADMIN;
+  const instituteId = isSuper ? parsed.data.instituteId || "" : user.instituteId ?? "";
+  if (!instituteId) return { error: "Institute is required" };
+  if (isSuper && !store.institutes.has(instituteId)) return { error: "Invalid institute" };
+
   const d = parsed.data;
   for (const a of store.accounts.values()) {
-    if (a.instituteId === user.instituteId && a.name.toLowerCase() === d.name.toLowerCase()) {
+    if (a.instituteId === instituteId && a.name.toLowerCase() === d.name.toLowerCase()) {
       return { error: "Account name already used" };
     }
   }
   const id = uid("ac");
   store.accounts.set(id, {
-    id, instituteId: user.instituteId, name: d.name, type: d.type,
+    id, instituteId, name: d.name, type: d.type,
     bankName: d.bankName || undefined, accountNo: d.accountNo || undefined, ifsc: d.ifsc || undefined,
     openingBal: d.openingBal, currentBal: d.openingBal, createdAt: new Date().toISOString(),
   });
   pushAudit({
-    instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
+    instituteId, actorId: user.id, actorEmail: user.email,
     action: "account.create", entity: "Account", entityId: id, meta: { name: d.name, type: d.type },
   });
   await saveStore();

@@ -27,15 +27,18 @@ export default async function FeesPage({
   if (!hasPermission(perms, PERMISSIONS.FEE_READ)) redirect("/dashboard");
 
   const sp = await searchParams;
-  const params = parseListParams(sp, { filterKeys: ["status", "academicYearId"] });
-
   const scope = user.instituteId;
+  const params = parseListParams(sp, { filterKeys: scope ? ["status", "academicYearId"] : ["status", "academicYearId", "instituteId"] });
+
   const canCollect = hasPermission(perms, PERMISSIONS.FEE_COLLECT) && !!scope;
   const canWriteStructure = hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE) && !!scope;
 
   const allAssignments = scopeByInstitute(store.feeAssignments.values(), scope);
+  const instituteName = (id: string) => store.institutes.get(id)?.name ?? "—";
+  const instituteOptions = scope ? [] : Array.from(store.institutes.values()).map((i) => ({ id: i.id, name: i.name }));
   const q = params.q.toLowerCase();
   const assignments = allAssignments.filter((a) => {
+    if (params.filters.instituteId && a.instituteId !== params.filters.instituteId) return false;
     if (params.filters.status && a.status !== params.filters.status) return false;
     if (params.filters.academicYearId && assignmentYearId(a) !== params.filters.academicYearId) return false;
     if (!q) return true;
@@ -50,11 +53,12 @@ export default async function FeesPage({
   const payments = scopeByInstitute(store.feePayments.values(), scope)
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
     .slice(0, 10);
-  const accounts = scope ? scopeByInstitute(store.accounts.values(), scope) : [];
-  const classes = scope ? scopeByInstitute(store.classes.values(), scope) : [];
-  const years = scope ? scopeByInstitute(store.academicYears.values(), scope) : [];
-  const classOptions = classes.map((c) => ({ id: c.id, name: c.name }));
-  const yearOptions = years.map((y) => ({ id: y.id, name: y.name }));
+  const accounts = scope ? scopeByInstitute(store.accounts.values(), scope) : Array.from(store.accounts.values());
+  const classes = scope ? scopeByInstitute(store.classes.values(), scope) : Array.from(store.classes.values());
+  const years = scope ? scopeByInstitute(store.academicYears.values(), scope) : Array.from(store.academicYears.values());
+  const optionLabel = (name: string, instituteId: string) => (scope ? name : `${name} — ${instituteName(instituteId)}`);
+  const classOptions = classes.map((c) => ({ id: c.id, name: optionLabel(c.name, c.instituteId) }));
+  const yearOptions = years.map((y) => ({ id: y.id, name: optionLabel(y.name, y.instituteId) }));
   const studentOptions = (scope ? scopeByInstitute(store.students.values(), scope) : [])
     .filter((s) => s.status === "ACTIVE")
     .map((s) => ({
@@ -149,6 +153,7 @@ export default async function FeesPage({
       <ListToolbar
         placeholder="Search by student name or admission #…"
         filters={[
+          ...(scope ? [] : [{ key: "instituteId", label: "Institute", options: instituteOptions.map((i) => ({ value: i.id, label: i.name })) }]),
           {
             key: "academicYearId", label: "Academic year",
             options: yearOptions.map((y) => ({ value: y.id, label: y.name })),
@@ -168,6 +173,11 @@ export default async function FeesPage({
         rows={pageData.rows}
         empty="No fee assignments match your filters"
         columns={[
+          ...(scope ? [] : [{
+            key: "institute",
+            header: "Institute",
+            render: (r: (typeof assignments)[number]) => instituteName(r.instituteId),
+          }]),
           { key: "stu", header: "Student", render: (r) => {
             const s = store.students.get(r.studentId);
             return (
