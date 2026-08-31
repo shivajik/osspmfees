@@ -27,7 +27,9 @@ export function NewClassButton() {
       >
         <form
           id="new-class"
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await withMinDelay(createClass(fd));
             setPending(false);

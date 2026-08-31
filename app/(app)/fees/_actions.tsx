@@ -67,7 +67,9 @@ export function EditPaymentButton({
       >
         <form
           id={`edit-pay-${payment.id}`}
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await withMinDelay(updatePayment(fd));
             setPending(false);
@@ -132,7 +134,9 @@ export function EditAssignmentButton({
       >
         <form
           id={`edit-assn-${assignment.id}`}
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await withMinDelay(updateAssignment(fd));
             setPending(false);
@@ -200,7 +204,7 @@ export function AssignFeesButton({
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ created: number; carried: number } | null>(null);
+  const [done, setDone] = useState<{ created: number; updated: number; carried: number } | null>(null);
   const [scope, setScope] = useState<"CLASS" | "ONE">("CLASS");
   const router = useRouter();
 
@@ -229,12 +233,14 @@ export function AssignFeesButton({
         ) : (
         <form
           id="assign-fees"
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null); setDone(null);
             const r = await withMinDelay(assignFees(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
-            setDone({ created: r?.created ?? 0, carried: r?.carried ?? 0 });
+            setDone({ created: r?.created ?? 0, updated: r?.updated ?? 0, carried: r?.carried ?? 0 });
             router.refresh();
           }}
           className="grid grid-cols-1 gap-3"
@@ -269,7 +275,7 @@ export function AssignFeesButton({
           </Field>
 
           {scope === "ONE" && (
-            <Field label="Student *" hint="Manual override — ignores class matching">
+            <Field label="Student *" hint="Manual override — ignores class matching. If this student already has the structure, their existing assignment is updated instead (no one else is affected).">
               <Select name="studentId" required>
                 {students.length === 0 && <option value="">No students yet</option>}
                 {students.map((s) => (
@@ -292,7 +298,10 @@ export function AssignFeesButton({
           {error && <p className="text-xs text-red-600">{error}</p>}
           {done && (
             <p className="text-xs text-emerald-600">
-              {done.created} assignment(s) created{done.carried > 0 ? ` · ${inr(done.carried)} carried forward as previous balance` : ""} — use “Collect” in the “Fees assigned to students” table.
+              {done.updated > 0
+                ? "This student already had this fee structure — the existing assignment was updated"
+                : `${done.created} assignment(s) created`}
+              {done.carried > 0 ? ` · ${inr(done.carried)} carried forward as previous balance` : ""} — use “Collect” in the “Fees assigned to students” table.
             </p>
           )}
         </form>
@@ -432,7 +441,9 @@ export function NewStructureButton({
       >
         <form
           id="new-fs"
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await withMinDelay(createStructure(fd));
             setPending(false);
@@ -476,7 +487,9 @@ export function EditStructureButton({
       >
         <form
           id={`edit-fs-${structure.id}`}
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await withMinDelay(updateStructure(fd));
             setPending(false);

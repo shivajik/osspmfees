@@ -29,7 +29,9 @@ export function NewAcademicYearButton() {
       >
         <form
           id="new-ay"
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await withMinDelay(createAcademicYear(fd));
             setPending(false);

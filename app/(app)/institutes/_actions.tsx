@@ -40,7 +40,9 @@ export function EditInstituteButton({ institute }: { institute: InstituteRow }) 
       >
         <form
           id={formId}
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const result = await withMinDelay(updateInstitute(fd));
             setPending(false);
@@ -190,7 +192,9 @@ export function NewInstituteButton() {
       >
         <form
           id="new-institute-form"
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const result = await withMinDelay(createInstitute(fd));
             setPending(false);

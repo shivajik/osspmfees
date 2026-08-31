@@ -79,7 +79,9 @@ export function CollectFeeForm({
   return (
     <Card>
       <form
-        action={async (fd) => {
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
           setPending(true); setError(null);
           const r = await withMinDelay(collectFee(fd));
           if (r?.error) {

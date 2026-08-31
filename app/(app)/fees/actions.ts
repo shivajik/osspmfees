@@ -308,7 +308,7 @@ const assignSchema = z.object({
   carryForward: z.string().optional().or(z.literal("")),
 });
 
-export async function assignFees(fd: FormData): Promise<{ error?: string; created?: number; carried?: number }> {
+export async function assignFees(fd: FormData): Promise<{ error?: string; created?: number; updated?: number; carried?: number }> {
   const user = await requireUser();
   const perms = permissionsForRole(user.role);
   if (!hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE)) return { error: "Not authorized" };
@@ -363,7 +363,60 @@ export async function assignFees(fd: FormData): Promise<{ error?: string; create
   if (studentId) {
     const s = store.students.get(studentId);
     if (!s || s.instituteId !== user.instituteId) return { error: "Student not found" };
-    if (existing.has(s.id)) return { error: "This student already has this fee structure assigned" };
+
+    // Already assigned? Re-price that one student's assignment in place rather
+    // than failing — nobody else in the class is touched.
+    if (existing.has(s.id)) {
+      const assn = Array.from(store.feeAssignments.values()).find(
+        (a) => a.instituteId === user.instituteId && a.feeStructureId === fs.id && a.studentId === s.id,
+      );
+      if (!assn) return { error: "This student already has this fee structure assigned" };
+      if (assn.carriedForwardTo) {
+        return { error: "This year's balance was already carried forward — edit the later year's assignment instead." };
+      }
+
+      // Work out the effect first; only commit once it is known to be valid.
+      const priors = carryForward
+        ? openPriorAssignments(s.id, fs.academicYearId).filter((p) => p.id !== assn.id)
+        : [];
+      const carriedNow = priors.reduce((sum, p) => sum + assignmentBalance(p), 0);
+      const newPayable = Math.max(0, fs.totalAmount - discount);
+      const newPrev = (assn.previousBalance ?? 0) + carriedNow;
+      if (assn.totalPaid > newPayable + newPrev) {
+        return { error: "Already-collected amount exceeds the new payable — reduce the discount." };
+      }
+
+      for (const prior of priors) {
+        prior.carriedForwardTo = assn.id;
+        prior.updatedAt = now;
+      }
+      if (priors.length) {
+        assn.carriedFrom = [...(assn.carriedFrom ?? []), ...priors.map((p) => p.id)];
+      }
+      const discountChanged = discount !== assn.discount;
+      assn.discount = discount;
+      assn.totalPayable = newPayable;
+      assn.previousBalance = newPrev;
+      assn.academicYearId = fs.academicYearId;
+      if (discountChanged) {
+        assn.discountBy = discount > 0 ? user.id : undefined;
+        assn.discountByName = discount > 0 ? user.name : undefined;
+        assn.discountReason = discount > 0 ? (discountReason || undefined) : undefined;
+      } else if (discount > 0 && discountReason) {
+        assn.discountReason = discountReason;
+      }
+      assn.status = assignmentStatusFor(assn);
+      assn.updatedAt = now;
+
+      pushAudit({
+        instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
+        action: "fee_assignment.update", entity: "FeeAssignment", entityId: assn.id,
+        meta: { via: "assign_dialog", discount, carried: carriedNow, studentId: s.id },
+      });
+      await saveStore();
+      return { updated: 1, carried: carriedNow };
+    }
+
     makeAssignment(s.id);
   } else {
     for (const s of store.students.values()) {

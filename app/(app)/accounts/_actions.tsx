@@ -33,7 +33,9 @@ export function NewAccountButton({
       >
         <form
           id="new-acc"
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await createAccount(fd);
             setPending(false);
@@ -103,7 +105,9 @@ export function EditAccountButton({
       >
         <form
           id={formId}
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await updateAccount(fd);
             setPending(false);

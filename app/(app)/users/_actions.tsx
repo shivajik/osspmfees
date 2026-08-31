@@ -134,7 +134,9 @@ export function NewUserButton({
       >
         <form
           id="new-user-form"
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null); setNotice(null);
             const r = await withMinDelay(createUser(fd));
             setPending(false);
@@ -209,7 +211,9 @@ export function EditUserButton({
       >
         <form
           id={`edit-user-${row.id}`}
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await updateUser(fd);
             setPending(false);

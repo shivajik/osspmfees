@@ -15,7 +15,9 @@ export function EditProfileForm({ name, phone }: { name: string; phone?: string 
   return (
     <form
       className="mt-2 space-y-3"
-      action={async (fd) => {
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
         setPending(true); setError(null); setOk(false);
         const r = await withMinDelay(updateProfile(fd));
         setPending(false);

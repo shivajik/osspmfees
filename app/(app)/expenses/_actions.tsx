@@ -114,7 +114,9 @@ export function NewExpenseButton({ categories, accounts }: { categories: Cat[]; 
       >
         <form
           id="new-exp"
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await createExpense(fd);
             setPending(false);
@@ -155,7 +157,9 @@ export function EditExpenseButton({
       >
         <form
           id={`edit-exp-${row.id}`}
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await updateExpense(fd);
             setPending(false);
@@ -185,9 +189,13 @@ export function CategoryManagerButton({
     setPending(true); setError(null);
     const r = await fn(fd);
     setPending(false);
-    if (r?.error) return setError(r.error);
+    if (r?.error) {
+      setError(r.error);
+      return false;
+    }
     setEditing(null);
     router.refresh();
+    return true;
   };
 
   return (
@@ -202,7 +210,11 @@ export function CategoryManagerButton({
         footer={<Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>}
       >
         <form
-          action={async (fd) => run(createCategory, fd)}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            if (await run(createCategory, new FormData(form))) form.reset();
+          }}
           className="flex items-end gap-2"
         >
           <div className="flex-1">
@@ -216,7 +228,7 @@ export function CategoryManagerButton({
           {categories.map((c) => (
             <li key={c.id} className="py-2">
               {editing === c.id ? (
-                <form className="flex items-center gap-2" action={async (fd) => run(updateCategory, fd)}>
+                <form className="flex items-center gap-2" onSubmit={async (e) => { e.preventDefault(); await run(updateCategory, new FormData(e.currentTarget)); }}>
                   <input type="hidden" name="id" value={c.id} />
                   <Input name="name" defaultValue={c.name} required maxLength={80} className="flex-1" />
                   <Button size="sm" type="submit" disabled={pending} loading={pending}>Save</Button>
@@ -232,7 +244,7 @@ export function CategoryManagerButton({
                     <Button size="sm" variant="ghost" type="button" onClick={() => { setEditing(c.id); setError(null); }}>
                       <Pencil className="h-3.5 w-3.5" />Rename
                     </Button>
-                    <form action={async (fd) => run(deleteCategory, fd)}>
+                    <form onSubmit={async (e) => { e.preventDefault(); await run(deleteCategory, new FormData(e.currentTarget)); }}>
                       <input type="hidden" name="id" value={c.id} />
                       <Button size="sm" variant="ghost" type="submit" disabled={pending || c.usage > 0} title={c.usage > 0 ? "In use — rename instead" : "Delete"}>
                         <Trash2 className="h-3.5 w-3.5" />

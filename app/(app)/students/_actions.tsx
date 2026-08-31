@@ -50,7 +50,9 @@ export function EditStudentButton({
       >
         <form
           id={formId}
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await updateStudent(fd);
             setPending(false);
@@ -127,7 +129,9 @@ export function NewStudentButton({
       >
         <form
           id="new-student"
-          action={async (fd) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
             setPending(true); setError(null);
             const r = await createStudent(fd);
             setPending(false);
