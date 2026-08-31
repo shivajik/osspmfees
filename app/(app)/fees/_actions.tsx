@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
 import { createStructure, updateStructure, assignFees, updateAssignment, updatePayment } from "./actions";
 import { FEE_HEADS } from "@/lib/fee-heads";
+import { withMinDelay } from "@/lib/utils";
 
 type Mode = "CASH" | "BANK" | "CARD" | "UPI" | "CHEQUE" | "ONLINE";
 type Cheque = { chequeNo: string; chequeDate: string; bankName: string; branch?: string };
@@ -68,7 +69,7 @@ export function EditPaymentButton({
           id={`edit-pay-${payment.id}`}
           action={async (fd) => {
             setPending(true); setError(null);
-            const r = await updatePayment(fd);
+            const r = await withMinDelay(updatePayment(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
             setOpen(false); router.refresh();
@@ -91,20 +92,28 @@ export function EditPaymentButton({
 
 export function EditAssignmentButton({
   assignment,
+  structures = [],
 }: {
   assignment: {
-    id: string; studentName: string; structureTotal: number; discount: number;
+    id: string; studentName: string; feeStructureId: string; structureTotal: number; discount: number;
     discountReason?: string; discountByName?: string; previousBalance: number; totalPaid: number;
   };
+  /** Structures this student can be moved to — omit to keep the current one fixed. */
+  structures?: { id: string; name: string; className: string; yearName: string; totalAmount: number }[];
 }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [structureId, setStructureId] = useState(assignment.feeStructureId);
   const [discount, setDiscount] = useState(assignment.discount);
   const [prev, setPrev] = useState(assignment.previousBalance);
   const router = useRouter();
 
-  const payable = Math.max(0, assignment.structureTotal - (Number.isFinite(discount) ? discount : 0));
+  // Switching structure re-prices the assignment, so the maths below follows the picked one.
+  const picked = structures.find((s) => s.id === structureId);
+  const structureTotal = picked?.totalAmount ?? assignment.structureTotal;
+  const structureChanged = structureId !== assignment.feeStructureId;
+  const payable = Math.max(0, structureTotal - (Number.isFinite(discount) ? discount : 0));
   const gross = payable + (Number.isFinite(prev) ? prev : 0);
 
   return (
@@ -113,7 +122,7 @@ export function EditAssignmentButton({
       <Modal
         open={open} onClose={() => setOpen(false)}
         title={`Edit fee assignment — ${assignment.studentName}`}
-        description="Change the discount or the carried-forward previous balance."
+        description="Move the student to a different fee structure, or change the discount and carried-forward balance."
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
@@ -125,7 +134,7 @@ export function EditAssignmentButton({
           id={`edit-assn-${assignment.id}`}
           action={async (fd) => {
             setPending(true); setError(null);
-            const r = await updateAssignment(fd);
+            const r = await withMinDelay(updateAssignment(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
             setOpen(false); router.refresh();
@@ -133,9 +142,25 @@ export function EditAssignmentButton({
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
         >
           <input type="hidden" name="assignmentId" value={assignment.id} />
-          <Field label="Discount *" hint={`Structure total ${inr(assignment.structureTotal)}`}>
+          {structures.length > 0 && (
+            <div className="sm:col-span-2">
+              <Field
+                label="Fee structure *"
+                hint={structureChanged ? "Changing this re-prices the assignment — receipts already issued stay untouched." : "The fee structure this student is charged under"}
+              >
+                <Select name="feeStructureId" value={structureId} onChange={(e) => setStructureId(e.target.value)}>
+                  {structures.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} — {s.className} / {s.yearName} ({inr(s.totalAmount)})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          )}
+          <Field label="Discount *" hint={`Structure total ${inr(structureTotal)}`}>
             <Input
-              name="discount" type="number" min="0" max={assignment.structureTotal} step="1" required
+              name="discount" type="number" min="0" max={structureTotal} step="1" required
               value={Number.isFinite(discount) ? String(discount) : ""}
               onChange={(e) => setDiscount(Number(e.target.value))}
             />
@@ -206,7 +231,7 @@ export function AssignFeesButton({
           id="assign-fees"
           action={async (fd) => {
             setPending(true); setError(null); setDone(null);
-            const r = await assignFees(fd);
+            const r = await withMinDelay(assignFees(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
             setDone({ created: r?.created ?? 0, carried: r?.carried ?? 0 });
@@ -267,7 +292,7 @@ export function AssignFeesButton({
           {error && <p className="text-xs text-red-600">{error}</p>}
           {done && (
             <p className="text-xs text-emerald-600">
-              {done.created} assignment(s) created{done.carried > 0 ? ` · ${inr(done.carried)} carried forward as previous balance` : ""} — use “Collect” in the Assignments table.
+              {done.created} assignment(s) created{done.carried > 0 ? ` · ${inr(done.carried)} carried forward as previous balance` : ""} — use “Collect” in the “Fees assigned to students” table.
             </p>
           )}
         </form>
@@ -409,7 +434,7 @@ export function NewStructureButton({
           id="new-fs"
           action={async (fd) => {
             setPending(true); setError(null);
-            const r = await createStructure(fd);
+            const r = await withMinDelay(createStructure(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
             setOpen(false); router.refresh();
@@ -453,7 +478,7 @@ export function EditStructureButton({
           id={`edit-fs-${structure.id}`}
           action={async (fd) => {
             setPending(true); setError(null);
-            const r = await updateStructure(fd);
+            const r = await withMinDelay(updateStructure(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
             setOpen(false); router.refresh();

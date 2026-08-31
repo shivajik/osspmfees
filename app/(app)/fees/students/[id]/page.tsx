@@ -8,6 +8,7 @@ import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { CreditCard } from "lucide-react";
 
 export default async function StudentLedgerPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -24,6 +25,11 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
     .filter((p) => p.studentId === student.id)
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
 
+  // Anything still collectable — the latest open year is what the counter defaults to.
+  const canCollect = hasPermission(perms, PERMISSIONS.FEE_COLLECT) && !!user.instituteId;
+  const openRows = rows.filter((r) => !r.carriedForward && r.balance > 0);
+  const collectTarget = openRows[openRows.length - 1];
+
   const totalFees = rows.reduce((s, r) => s + r.currentFees, 0);
   const totalPaid = rows.reduce((s, r) => s + r.paid, 0);
   const currentDue = rows.filter((r) => !r.carriedForward).reduce((s, r) => s + r.balance, 0);
@@ -33,7 +39,19 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
       <PageHeader
         title={`${student.name} — fee ledger`}
         description={`Admission #${student.admissionNo} · ${store.classes.get(student.classId)?.name ?? "—"} · year-wise dues and carried-forward balances`}
-        actions={<Link href="/fees" className="text-sm text-[var(--color-brand)] hover:underline">Back to fees</Link>}
+        actions={
+          <div className="flex items-center gap-3">
+            {canCollect && collectTarget && (
+              <Link
+                href={`/fees/collect/${collectTarget.assignment.id}`}
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-[var(--color-brand)] px-3 text-sm font-medium text-white hover:brightness-110"
+              >
+                <CreditCard className="h-4 w-4" />Collect fees
+              </Link>
+            )}
+            <Link href="/fees" className="text-sm text-[var(--color-brand)] hover:underline">Back to fees</Link>
+          </div>
+        }
       />
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -63,6 +81,20 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
           { key: "bal", header: "Balance", render: (r) => r.carriedForward
             ? <Badge tone="neutral">Carried forward</Badge>
             : <span className="font-medium text-amber-600">{formatCurrency(r.balance)}</span> },
+          ...(canCollect ? [{
+            key: "action",
+            header: "",
+            render: (r: (typeof rows)[number]) => (!r.carriedForward && r.balance > 0 ? (
+              <div className="flex justify-end">
+                <Link
+                  href={`/fees/collect/${r.assignment.id}`}
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-border)]"
+                >
+                  <CreditCard className="h-3.5 w-3.5" />Collect
+                </Link>
+              </div>
+            ) : null),
+          }] : []),
         ]}
       />
 

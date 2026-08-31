@@ -68,6 +68,14 @@ export default async function FeesPage({
       className: store.classes.get(s.classId)?.name ?? "—",
     }));
 
+  const structureOptions = structures.map((fs) => ({
+    id: fs.id,
+    name: fs.name,
+    className: store.classes.get(fs.classId)?.name ?? "—",
+    yearName: store.academicYears.get(fs.academicYearId)?.name ?? "—",
+    totalAmount: fs.totalAmount,
+  }));
+
   const totalPayable = assignments.reduce((s, a) => s + grossPayable(a), 0);
   const totalPaid = assignments.reduce((s, a) => s + a.totalPaid, 0);
   const totalPrevious = assignments.reduce((s, a) => s + (a.previousBalance ?? 0), 0);
@@ -78,18 +86,12 @@ export default async function FeesPage({
     <>
       <PageHeader
         title="Fee collection"
-        description="Year-wise assignments with carried-forward previous balances, discounts and receipts."
+        description="Year-wise fees assigned to students, with carried-forward previous balances, discounts and receipts."
         actions={
           <div className="flex gap-2">
             {canWriteStructure && (
               <AssignFeesButton
-                structures={structures.map((fs) => ({
-                  id: fs.id,
-                  name: fs.name,
-                  className: store.classes.get(fs.classId)?.name ?? "—",
-                  yearName: store.academicYears.get(fs.academicYearId)?.name ?? "—",
-                  totalAmount: fs.totalAmount,
-                }))}
+                structures={structureOptions}
                 students={studentOptions}
               />
             )}
@@ -129,19 +131,13 @@ export default async function FeesPage({
           <ol className="list-decimal space-y-1 pl-5 text-sm text-[var(--color-fg-muted)]">
             <li><span className="font-medium text-[var(--color-fg)]">Create a fee structure</span> for a class + academic year (Institute Admin).</li>
             <li><span className="font-medium text-[var(--color-fg)]">Assign fees</span> to students — unpaid dues from earlier years are carried forward automatically.</li>
-            <li><span className="font-medium text-[var(--color-fg)]">Collect</span> full or partial payments from the Assignments table below.</li>
+            <li><span className="font-medium text-[var(--color-fg)]">Collect</span> full or partial payments from the “Fees assigned to students” table below.</li>
           </ol>
           {canWriteStructure && (
             <div className="mt-4">
               <AssignFeesButton
                 label="Step 2 — Assign fees to students"
-                structures={structures.map((fs) => ({
-                  id: fs.id,
-                  name: fs.name,
-                  className: store.classes.get(fs.classId)?.name ?? "—",
-                  yearName: store.academicYears.get(fs.academicYearId)?.name ?? "—",
-                  totalAmount: fs.totalAmount,
-                }))}
+                structures={structureOptions}
                 students={studentOptions}
               />
             </div>
@@ -149,7 +145,7 @@ export default async function FeesPage({
         </Card>
       )}
 
-      <div className="mb-2 text-sm font-medium">Assignments</div>
+      <div className="mb-2 text-sm font-medium">Fees assigned to students</div>
       <ListToolbar
         placeholder="Search by student name or admission #…"
         filters={[
@@ -223,9 +219,11 @@ export default async function FeesPage({
             <div className="flex items-center justify-end gap-1">
               {canWriteStructure && (
                 <EditAssignmentButton
+                  structures={structureOptions}
                   assignment={{
                     id: r.id,
                     studentName: store.students.get(r.studentId)?.name ?? "",
+                    feeStructureId: r.feeStructureId,
                     structureTotal: store.feeStructures.get(r.feeStructureId)?.totalAmount ?? r.totalPayable + r.discount,
                     discount: r.discount,
                     discountReason: r.discountReason,

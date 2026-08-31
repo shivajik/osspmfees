@@ -396,6 +396,8 @@ export async function assignFees(fd: FormData): Promise<{ error?: string; create
 
 const updateAssignmentSchema = z.object({
   assignmentId: z.string().min(1),
+  /** Optional — set to move the student onto a different fee structure. */
+  feeStructureId: z.string().optional().or(z.literal("")),
   discount: z.coerce.number().int().min(0).max(10_000_000),
   discountReason: z.string().max(160).optional().or(z.literal("")),
   previousBalance: z.coerce.number().int().min(0).max(100_000_000).optional(),
@@ -413,8 +415,18 @@ export async function updateAssignment(fd: FormData): Promise<{ error?: string }
 
   const assn = store.feeAssignments.get(assignmentId);
   if (!assn || assn.instituteId !== user.instituteId) return { error: "Assignment not found" };
-  const fs = store.feeStructures.get(assn.feeStructureId);
-  if (!fs) return { error: "Fee structure missing" };
+
+  // Moving a student onto a different structure re-prices the assignment.
+  const targetStructureId = parsed.data.feeStructureId || assn.feeStructureId;
+  const fs = store.feeStructures.get(targetStructureId);
+  if (!fs || fs.instituteId !== user.instituteId) return { error: "Fee structure not found" };
+  const structureChanged = targetStructureId !== assn.feeStructureId;
+  if (structureChanged) {
+    const duplicate = Array.from(store.feeAssignments.values()).some(
+      (a) => a.id !== assn.id && a.studentId === assn.studentId && a.feeStructureId === fs.id,
+    );
+    if (duplicate) return { error: "This student already has that fee structure assigned" };
+  }
   if (discount > fs.totalAmount) return { error: "Discount cannot exceed the fee structure total" };
 
   const newPayable = Math.max(0, fs.totalAmount - discount);
@@ -424,6 +436,7 @@ export async function updateAssignment(fd: FormData): Promise<{ error?: string }
   }
 
   const discountChanged = discount !== assn.discount;
+  assn.feeStructureId = fs.id;
   assn.discount = discount;
   assn.totalPayable = newPayable;
   assn.previousBalance = newPrev;
@@ -441,7 +454,7 @@ export async function updateAssignment(fd: FormData): Promise<{ error?: string }
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "fee_assignment.update", entity: "FeeAssignment", entityId: assn.id,
-    meta: { discount, previousBalance: newPrev, year: assignmentYearId(assn) },
+    meta: { discount, previousBalance: newPrev, year: assignmentYearId(assn), feeStructureId: fs.id, structureChanged },
   });
   await saveStore();
 }

@@ -7,11 +7,19 @@ export function DataTable<T>({
   empty = "No records",
   rowKey,
 }: {
-  columns: { key: string; header: React.ReactNode; className?: string; render: (row: T) => React.ReactNode }[];
+  columns: {
+    key: string;
+    header: React.ReactNode;
+    className?: string;
+    render: (row: T) => React.ReactNode;
+    /** Rendered in a totals row under the table; the row appears if any column sets one. */
+    footer?: React.ReactNode;
+  }[];
   rows: T[];
   empty?: string;
   rowKey: (row: T) => string;
 }) {
+  const hasFooter = columns.some((c) => c.footer !== undefined);
   return (
     <div className="card overflow-hidden p-0">
       <div className="scrollbar-thin overflow-x-auto">
@@ -44,6 +52,17 @@ export function DataTable<T>({
               ))
             )}
           </tbody>
+          {hasFooter && rows.length > 0 && (
+            <tfoot className="border-t-2 border-[var(--color-border-strong)] bg-[var(--color-surface-2)] font-medium">
+              <tr>
+                {columns.map((c) => (
+                  <td key={c.key} className={cn("px-4 py-3 align-middle", c.className)}>
+                    {c.footer}
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

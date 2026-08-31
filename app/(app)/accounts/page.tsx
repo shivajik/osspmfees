@@ -32,6 +32,11 @@ export default async function AccountsPage({
 
   const sp = await searchParams;
   const params = parseListParams(sp, { filterKeys: scope ? ["type"] : ["type", "instituteId"] });
+  // Everything the picked institute owns — the headline cards ignore the type
+  // and search filters so they always read as that institute's full position.
+  const scopedAccounts = params.filters.instituteId
+    ? allAccounts.filter((a) => a.instituteId === params.filters.instituteId)
+    : allAccounts;
   const q = params.q.toLowerCase();
   const filteredAccounts = allAccounts.filter((a) => {
     if (params.filters.instituteId && a.instituteId !== params.filters.instituteId) return false;
@@ -44,8 +49,17 @@ export default async function AccountsPage({
     .filter((t) => !params.filters.instituteId || t.instituteId === params.filters.instituteId)
     .slice(0, 40);
 
-  const bankTotal = allAccounts.filter((a) => a.type === "BANK").reduce((s, a) => s + a.currentBal, 0);
-  const cashTotal = allAccounts.filter((a) => a.type === "CASH").reduce((s, a) => s + a.currentBal, 0);
+  const bankAccounts = scopedAccounts.filter((a) => a.type === "BANK");
+  const cashAccounts = scopedAccounts.filter((a) => a.type === "CASH");
+  const bankTotal = bankAccounts.reduce((s, a) => s + a.currentBal, 0);
+  const cashTotal = cashAccounts.reduce((s, a) => s + a.currentBal, 0);
+  const openingTotal = scopedAccounts.reduce((s, a) => s + a.openingBal, 0);
+  // Totals for the table footer follow every active filter, including type and search.
+  const filteredOpening = filteredAccounts.reduce((s, a) => s + a.openingBal, 0);
+  const filteredCurrent = filteredAccounts.reduce((s, a) => s + a.currentBal, 0);
+  const scopeLabel = params.filters.instituteId
+    ? instituteName(params.filters.instituteId)
+    : scope ? instituteName(scope) : "All institutes";
 
   return (
     <>
@@ -55,10 +69,11 @@ export default async function AccountsPage({
         actions={canWrite ? <NewAccountButton isSuper={isSuper} institutes={instituteOptions} /> : null}
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Card><CardHeader><div><CardTitle>Bank balance</CardTitle><CardDescription>{allAccounts.filter((a) => a.type === "BANK").length} accounts</CardDescription></div></CardHeader><p className="text-2xl font-semibold">{formatCurrency(bankTotal)}</p></Card>
-        <Card><CardHeader><div><CardTitle>Cash balance</CardTitle><CardDescription>{allAccounts.filter((a) => a.type === "CASH").length} accounts</CardDescription></div></CardHeader><p className="text-2xl font-semibold">{formatCurrency(cashTotal)}</p></Card>
-        <Card><CardHeader><div><CardTitle>Total on hand</CardTitle><CardDescription>Bank + cash</CardDescription></div></CardHeader><p className="text-2xl font-semibold text-emerald-600">{formatCurrency(bankTotal + cashTotal)}</p></Card>
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card><CardHeader><div><CardTitle>Bank balance</CardTitle><CardDescription>{bankAccounts.length} accounts</CardDescription></div></CardHeader><p className="text-2xl font-semibold">{formatCurrency(bankTotal)}</p></Card>
+        <Card><CardHeader><div><CardTitle>Cash balance</CardTitle><CardDescription>{cashAccounts.length} accounts</CardDescription></div></CardHeader><p className="text-2xl font-semibold">{formatCurrency(cashTotal)}</p></Card>
+        <Card><CardHeader><div><CardTitle>Opening total</CardTitle><CardDescription>{scopeLabel}</CardDescription></div></CardHeader><p className="text-2xl font-semibold">{formatCurrency(openingTotal)}</p></Card>
+        <Card><CardHeader><div><CardTitle>Total on hand</CardTitle><CardDescription>Bank + cash · {scopeLabel}</CardDescription></div></CardHeader><p className="text-2xl font-semibold text-emerald-600">{formatCurrency(bankTotal + cashTotal)}</p></Card>
       </div>
 
       <div className="mb-2 text-sm font-medium">Accounts</div>
@@ -79,12 +94,12 @@ export default async function AccountsPage({
             header: "Institute",
             render: (r: (typeof page.rows)[number]) => instituteName(r.instituteId),
           }]),
-          { key: "name", header: "Name", render: (r) => <div><div className="font-medium">{r.name}</div>{r.bankName && <div className="text-xs text-[var(--color-fg-muted)]">{r.bankName}</div>}</div> },
+          { key: "name", header: "Name", render: (r) => <div><div className="font-medium">{r.name}</div>{r.bankName && <div className="text-xs text-[var(--color-fg-muted)]">{r.bankName}</div>}</div>, footer: `Total · ${filteredAccounts.length} account${filteredAccounts.length === 1 ? "" : "s"}` },
           { key: "type", header: "Type", render: (r) => <Badge tone={r.type === "BANK" ? "info" : "neutral"}>{r.type}</Badge> },
           { key: "acc", header: "Account #", render: (r) => <span className="font-mono text-xs">{r.accountNo ?? "—"}</span> },
           { key: "ifsc", header: "IFSC", render: (r) => <span className="font-mono text-xs">{r.ifsc ?? "—"}</span> },
-          { key: "opening", header: "Opening", render: (r) => formatCurrency(r.openingBal) },
-          { key: "current", header: "Current", render: (r) => <span className="font-semibold">{formatCurrency(r.currentBal)}</span> },
+          { key: "opening", header: "Opening", render: (r) => formatCurrency(r.openingBal), footer: formatCurrency(filteredOpening) },
+          { key: "current", header: "Current", render: (r) => <span className="font-semibold">{formatCurrency(r.currentBal)}</span>, footer: <span className="text-emerald-600">{formatCurrency(filteredCurrent)}</span> },
           { key: "actions", header: "", render: (r) => canWrite ? (
             <div className="flex justify-end">
               <EditAccountButton account={{ id: r.id, name: r.name, type: r.type, bankName: r.bankName, accountNo: r.accountNo, ifsc: r.ifsc }} />

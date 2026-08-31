@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select, Field } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { collectFee } from "../../actions";
+import { withMinDelay } from "@/lib/utils";
 
 type Mode = "CASH" | "BANK" | "CARD" | "UPI" | "CHEQUE" | "ONLINE";
 type HeadRef = { head: string; remaining: number };
@@ -62,14 +63,30 @@ export function CollectFeeForm({
     setHeadAmounts(allocate(allHeads, next + nextDiscount));
   }
 
+  /**
+   * Heads drive the amount, not the other way round: unchecking a head (or
+   * retyping one) lowers what this payment settles, so a "Full payment" that no
+   * longer covers the balance falls back to Partial.
+   */
+  function applyHeads(next: Record<string, string>) {
+    setHeadAmounts(next);
+    const total = Object.values(next).reduce((sum, v) => sum + (Number(v) || 0), 0);
+    const nextAmount = Math.max(0, Math.min(total - safeDiscount, balance - safeDiscount));
+    setAmount(nextAmount);
+    setKind(nextAmount >= balance - safeDiscount ? "FULL" : "PARTIAL");
+  }
+
   return (
     <Card>
       <form
         action={async (fd) => {
           setPending(true); setError(null);
-          const r = await collectFee(fd);
-          setPending(false);
-          if (r?.error) return setError(r.error);
+          const r = await withMinDelay(collectFee(fd));
+          if (r?.error) {
+            setPending(false);
+            return setError(r.error);
+          }
+          // Stays pending: the button keeps spinning until the receipt page takes over.
           router.push(`/fees/receipts/${r?.paymentId}`);
         }}
         className="grid grid-cols-1 gap-3 sm:grid-cols-2"
@@ -129,14 +146,16 @@ export function CollectFeeForm({
                     <label className="flex flex-1 items-center gap-2 text-sm">
                       <input
                         type="checkbox" className="h-4 w-4" checked={checked}
-                        onChange={(e) =>
-                          setHeadAmounts((prev) => {
-                            const next = { ...prev };
-                            if (e.target.checked) next[h.head] = String(Math.min(h.remaining, Math.max(0, settled - headsTotal)) || h.remaining);
-                            else delete next[h.head];
-                            return next;
-                          })
-                        }
+                        onChange={(e) => {
+                          const next = { ...headAmounts };
+                          if (e.target.checked) {
+                            const others = headsTotal - (Number(next[h.head]) || 0);
+                            next[h.head] = String(Math.max(0, Math.min(h.remaining, balance - others)));
+                          } else {
+                            delete next[h.head];
+                          }
+                          applyHeads(next);
+                        }}
                       />
                       {h.head}
                       <span className="text-xs text-[var(--color-fg-subtle)]">(owes {inr(h.remaining)})</span>
@@ -145,7 +164,7 @@ export function CollectFeeForm({
                       className="w-32" type="number" min="0" step="1" placeholder="Amount"
                       disabled={!checked}
                       value={headAmounts[h.head] ?? ""}
-                      onChange={(e) => setHeadAmounts((prev) => ({ ...prev, [h.head]: e.target.value }))}
+                      onChange={(e) => applyHeads({ ...headAmounts, [h.head]: e.target.value })}
                     />
                   </div>
                 );

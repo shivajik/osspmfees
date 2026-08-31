@@ -32,22 +32,48 @@ export async function GET(req: Request) {
   if (!hasPermission(permissionsForRole(user.role), PERMISSIONS.REPORT_VIEW)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
-  const scope = user.instituteId;
   const url = new URL(req.url);
   const tab = url.searchParams.get("tab") ?? "daily";
   const format = ((url.searchParams.get("format") ?? "csv").toLowerCase() as Format);
 
+  // Mirrors the Reports screen: institute users stay on their tenant, a super
+  // admin may narrow to one institute via ?instituteId.
+  const requested = url.searchParams.get("instituteId") ?? "";
+  const chosen = !user.instituteId && store.institutes.has(requested) ? requested : null;
+  const scope = user.instituteId ?? chosen;
+  const showInstitute = !scope;
+  const instituteName = (id: string) => store.institutes.get(id)?.name ?? "";
+  const collectedBy = (p: { createdBy: string; createdByName: string }) => {
+    const u = store.users.get(p.createdBy);
+    const name = p.createdByName || u?.name || "";
+    return u?.role ? `${name} (${u.role.replace("_", " ")})` : name;
+  };
+
   let rows: (string | number)[][] = [];
   if (tab === "daily" || tab === "monthly") {
     const key = tab === "daily" ? 10 : 7;
-    const map = new Map<string, { count: number; total: number }>();
+    const map = new Map<string, { period: string; instituteId: string; count: number; total: number; by: Set<string> }>();
     scopeByInstitute(store.feePayments.values(), scope).forEach((p) => {
-      const k = p.paidAt.slice(0, key);
-      const cur = map.get(k) ?? { count: 0, total: 0 };
-      cur.count += 1; cur.total += p.amount;
+      const period = p.paidAt.slice(0, key);
+      const k = showInstitute ? `${period}|${p.instituteId}` : period;
+      const cur = map.get(k) ?? { period, instituteId: p.instituteId, count: 0, total: 0, by: new Set<string>() };
+      cur.count += 1; cur.total += p.amount; cur.by.add(collectedBy(p));
       map.set(k, cur);
     });
-    rows = [["Period", "Receipts", "Amount"], ...Array.from(map.entries()).sort().map(([k, v]) => [k, v.count, v.total])];
+    rows = [[
+      "Period",
+      ...(showInstitute ? ["Institute"] : []),
+      "Receipts", "Collected by", "Amount",
+    ]];
+    Array.from(map.values())
+      .sort((a, b) => b.period.localeCompare(a.period))
+      .forEach((v) => rows.push([
+        v.period,
+        ...(showInstitute ? [instituteName(v.instituteId)] : []),
+        v.count,
+        Array.from(v.by).filter(Boolean).join(", "),
+        v.total,
+      ]));
   } else if (tab === "student") {
     const map = new Map<string, { payable: number; paid: number }>();
     scopeByInstitute(store.feeAssignments.values(), scope).forEach((a) => {
@@ -116,7 +142,7 @@ export async function GET(req: Request) {
       const isNumeric = typeof sample?.[i] === "number";
       return { header: String(h), width: isNumeric ? 90 : 120, align: (isNumeric ? "right" : "left") as "left" | "right" };
     });
-    const institute = user.instituteId ? store.institutes.get(user.instituteId)?.name : "All institutes";
+    const institute = scope ? store.institutes.get(scope)?.name : "All institutes";
     const bytes = await renderTablePdf({
       title,
       subtitle: institute,
