@@ -58,7 +58,7 @@ export default async function FeesPage({
   const years = scope ? scopeByInstitute(store.academicYears.values(), scope) : Array.from(store.academicYears.values());
   const optionLabel = (name: string, instituteId: string) => (scope ? name : `${name} — ${instituteName(instituteId)}`);
   const classOptions = classes.map((c) => ({ id: c.id, name: optionLabel(c.name, c.instituteId) }));
-  const yearOptions = years.map((y) => ({ id: y.id, name: optionLabel(y.name, y.instituteId) }));
+  const yearOptions = years.map((y) => ({ id: y.id, name: optionLabel(y.name, y.instituteId), isActive: y.isActive }));
   const studentOptions = (scope ? scopeByInstitute(store.students.values(), scope) : [])
     .filter((s) => s.status === "ACTIVE")
     .map((s) => ({

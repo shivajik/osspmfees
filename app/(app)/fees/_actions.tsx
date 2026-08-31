@@ -8,6 +8,7 @@ import { Input, Select, Field } from "@/components/ui/input";
 import { createStructure, updateStructure, assignFees, updateAssignment, updatePayment } from "./actions";
 import { FEE_HEADS } from "@/lib/fee-heads";
 import { withMinDelay } from "@/lib/utils";
+import { toast } from "sonner";
 
 type Mode = "CASH" | "BANK" | "CARD" | "UPI" | "CHEQUE" | "ONLINE";
 type Cheque = { chequeNo: string; chequeDate: string; bankName: string; branch?: string };
@@ -204,11 +205,11 @@ export function AssignFeesButton({
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ created: number; updated: number; carried: number } | null>(null);
   const [scope, setScope] = useState<"CLASS" | "ONE">("CLASS");
   const router = useRouter();
 
   const noStructures = structures.length === 0;
+  const close = () => { setOpen(false); setError(null); };
 
   return (
     <>
@@ -216,12 +217,12 @@ export function AssignFeesButton({
         <Users className="h-4 w-4" />{label}
       </Button>
       <Modal
-        open={open} onClose={() => { setOpen(false); setDone(null); setError(null); }}
+        open={open} onClose={close}
         title="Assign fees to students"
         description="Unpaid dues from earlier academic years are carried forward as the student's previous balance."
         footer={
           <>
-            <Button variant="ghost" onClick={() => { setOpen(false); setDone(null); setError(null); }}>Close</Button>
+            <Button variant="ghost" onClick={close}>Close</Button>
             <Button form="assign-fees" type="submit" disabled={pending || noStructures} loading={pending}>Assign</Button>
           </>
         }
@@ -236,11 +237,19 @@ export function AssignFeesButton({
           onSubmit={async (e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
-            setPending(true); setError(null); setDone(null);
+            setPending(true); setError(null);
             const r = await withMinDelay(assignFees(fd));
             setPending(false);
             if (r?.error) return setError(r.error);
-            setDone({ created: r?.created ?? 0, updated: r?.updated ?? 0, carried: r?.carried ?? 0 });
+            // Done — report the outcome as a toast so the dialog can get out of the way.
+            const carried = r?.carried ?? 0;
+            toast.success(
+              r?.updated
+                ? "Existing assignment updated for this student"
+                : `${r?.created ?? 0} assignment(s) created`,
+              carried > 0 ? { description: `${inr(carried)} carried forward as previous balance` } : undefined,
+            );
+            close();
             router.refresh();
           }}
           className="grid grid-cols-1 gap-3"
@@ -296,14 +305,6 @@ export function AssignFeesButton({
             Carry forward unpaid balance from earlier academic years
           </label>
           {error && <p className="text-xs text-red-600">{error}</p>}
-          {done && (
-            <p className="text-xs text-emerald-600">
-              {done.updated > 0
-                ? "This student already had this fee structure — the existing assignment was updated"
-                : `${done.created} assignment(s) created`}
-              {done.carried > 0 ? ` · ${inr(done.carried)} carried forward as previous balance` : ""} — use “Collect” in the “Fees assigned to students” table.
-            </p>
-          )}
         </form>
         )}
       </Modal>
@@ -392,9 +393,11 @@ function StructureFields({
   classes, years, structure,
 }: {
   classes: { id: string; name: string }[];
-  years: { id: string; name: string }[];
+  years: { id: string; name: string; isActive?: boolean }[];
   structure?: { id: string; name: string; totalAmount: number; classId: string; academicYearId: string; items: { head: string; amount: number }[] };
 }) {
+  // New structures open on the running year; an existing one keeps its own.
+  const defaultYearId = structure?.academicYearId ?? years.find((y) => y.isActive)?.id ?? years[0]?.id ?? "";
   return (
     <>
       {structure && <input type="hidden" name="id" value={structure.id} />}
@@ -407,8 +410,8 @@ function StructureFields({
         </Select>
       </Field>
       <Field label="Academic year *">
-        <Select name="academicYearId" required defaultValue={structure?.academicYearId}>
-          {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+        <Select name="academicYearId" required defaultValue={defaultYearId}>
+          {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.isActive ? " (current)" : ""}</option>)}
         </Select>
       </Field>
       <HeadsEditor initial={structure?.items} />
@@ -419,7 +422,7 @@ function StructureFields({
 
 export function NewStructureButton({
   classes, years,
-}: { classes: { id: string; name: string }[]; years: { id: string; name: string }[] }) {
+}: { classes: { id: string; name: string }[]; years: { id: string; name: string; isActive?: boolean }[] }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -465,7 +468,7 @@ export function EditStructureButton({
 }: {
   structure: { id: string; name: string; totalAmount: number; classId: string; academicYearId: string; items: { head: string; amount: number }[] };
   classes: { id: string; name: string }[];
-  years: { id: string; name: string }[];
+  years: { id: string; name: string; isActive?: boolean }[];
 }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
