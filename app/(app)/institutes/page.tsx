@@ -6,7 +6,7 @@ import { store } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { EditInstituteButton, NewInstituteButton } from "./_actions";
+import { DeleteInstituteButton, EditInstituteButton, NewInstituteButton } from "./_actions";
 import { formatDate } from "@/lib/utils";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Pagination } from "@/components/pagination";
@@ -59,8 +59,9 @@ export default async function InstitutesPage({
           )},
           { key: "created", header: "Created", render: (r) => <span className="text-[var(--color-fg-muted)]">{formatDate(r.createdAt)}</span> },
           { key: "actions", header: "", render: (r) => (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-1">
               <EditInstituteButton institute={{ id: r.id, name: r.name, code: r.code, email: r.email, phone: r.phone, address: r.address, status: r.status }} />
+              <DeleteInstituteButton institute={{ id: r.id, name: r.name, code: r.code }} />
             </div>
           )},
         ]}

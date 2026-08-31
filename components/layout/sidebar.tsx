@@ -15,6 +15,8 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
   needs?: Permission;
   superOnly?: boolean;
+  /** Institute-scoped screens a super admin has no scope for (they hold every permission). */
+  hideForSuper?: boolean;
 };
 
 const groups: { label: string; items: NavItem[] }[] = [
@@ -43,7 +45,7 @@ const groups: { label: string; items: NavItem[] }[] = [
     label: "Finance",
     items: [
       { href: "/fees", label: "Fees", icon: ReceiptText, needs: PERMISSIONS.FEE_READ },
-      { href: "/fees/collect", label: "Collect fees", icon: HandCoins, needs: PERMISSIONS.FEE_COLLECT },
+      { href: "/fees/collect", label: "Collect fees", icon: HandCoins, needs: PERMISSIONS.FEE_COLLECT, hideForSuper: true },
       { href: "/expenses", label: "Expenses", icon: Wallet, needs: PERMISSIONS.EXPENSE_READ },
       { href: "/accounts", label: "Bank & cash", icon: Landmark, needs: PERMISSIONS.BANK_READ },
       { href: "/reports", label: "Reports", icon: FileBarChart2, needs: PERMISSIONS.REPORT_VIEW },
@@ -79,6 +81,7 @@ export function Sidebar({ role, permissions }: { role: string; permissions: stri
         {groups.map((g) => {
           const visible = g.items.filter((it) => {
             if (it.superOnly) return isSuper;
+            if (it.hideForSuper && isSuper) return false;
             if (it.needs) return hasPermission(permissions, it.needs);
             return true;
           });

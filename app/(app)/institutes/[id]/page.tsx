@@ -9,7 +9,7 @@ import { StatCard } from "@/components/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { EditInstituteButton } from "../_actions";
+import { DeleteInstituteButton, EditInstituteButton } from "../_actions";
 
 export default async function InstituteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -71,7 +71,10 @@ export default async function InstituteDetailPage({ params }: { params: Promise<
         title={institute.name}
         description={`Code ${institute.code} · Created ${formatDate(institute.createdAt)}`}
         actions={
-          <EditInstituteButton institute={{ id: institute.id, name: institute.name, code: institute.code, email: institute.email, phone: institute.phone, address: institute.address, status: institute.status }} />
+          <div className="flex items-center gap-1">
+            <EditInstituteButton institute={{ id: institute.id, name: institute.name, code: institute.code, email: institute.email, phone: institute.phone, address: institute.address, status: institute.status }} />
+            <DeleteInstituteButton institute={{ id: institute.id, name: institute.name, code: institute.code }} redirectTo="/institutes" />
+          </div>
         }
       />
 

@@ -1,11 +1,11 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
-import { createInstitute, updateInstitute } from "./actions";
+import { createInstitute, deleteInstitute, updateInstitute } from "./actions";
 import { withMinDelay } from "@/lib/utils";
 
 export type InstituteRow = {
@@ -68,6 +68,100 @@ export function EditInstituteButton({ institute }: { institute: InstituteRow }) 
           </Field>
           {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
+      </Modal>
+    </>
+  );
+}
+
+export function DeleteInstituteButton({
+  institute,
+  /** Where to go once the institute is gone — the detail page can't refresh into a deleted record. */
+  redirectTo,
+}: {
+  institute: Pick<InstituteRow, "id" | "name" | "code">;
+  redirectTo?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [confirmCode, setConfirmCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  const close = () => {
+    if (pending) return;
+    setOpen(false);
+    setConfirmCode("");
+    setError(null);
+  };
+
+  const run = async () => {
+    setPending(true); setError(null);
+    const fd = new FormData();
+    fd.set("id", institute.id);
+    fd.set("code", confirmCode);
+    const result = await withMinDelay(deleteInstitute(fd));
+    setPending(false);
+    if (result?.error) return setError(result.error);
+    setOpen(false);
+    setConfirmCode("");
+    if (redirectTo) router.push(redirectTo);
+    router.refresh();
+  };
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => setOpen(true)}
+        aria-label={`Delete institute ${institute.name}`}
+        className="text-[var(--color-danger)] hover:text-[var(--color-danger)]"
+      >
+        <Trash2 className="h-3.5 w-3.5" />Delete
+      </Button>
+      <Modal
+        open={open}
+        onClose={close}
+        title="Delete institute"
+        description="This cannot be undone."
+        footer={
+          <>
+            <Button variant="ghost" onClick={close} disabled={pending}>Cancel</Button>
+            <Button
+              variant="danger"
+              onClick={run}
+              loading={pending}
+              disabled={confirmCode.trim().toUpperCase() !== institute.code.toUpperCase()}
+            >
+              Delete institute
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm">
+          Delete <span className="font-semibold">{institute.name}</span> and everything inside it — users,
+          academic years, classes, divisions, students, fee structures and assignments, accounts and
+          expense categories?
+        </p>
+        <p className="mt-2 text-xs text-[var(--color-fg-muted)]">
+          An institute with fee receipts, expense vouchers or ledger transactions cannot be deleted —
+          suspend it instead.
+        </p>
+        <div className="mt-3">
+          <Field label={`Type ${institute.code} to confirm`}>
+            <Input
+              value={confirmCode}
+              onChange={(e) => setConfirmCode(e.target.value)}
+              autoComplete="off"
+              placeholder={institute.code}
+            />
+          </Field>
+        </div>
+        {error && (
+          <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+            {error}
+          </div>
+        )}
       </Modal>
     </>
   );
