@@ -35,7 +35,7 @@ type Key =
 
 /** Ordered: the first matching rule wins for a given cell. */
 const RULES: Array<{ key: Key; test: (h: string) => boolean; priority: number }> = [
-  { key: "name", priority: 10, test: (h) => /(student\s*name|name of the student|^name$|^student$|studentname)/.test(h) },
+  { key: "name", priority: 10, test: (h) => /(student\s*name|name of (?:the )?student|^name$|^student$|studentname)/.test(h) },
   { key: "admissionNo", priority: 9, test: (h) => /(^prn|prn no|general no|^gr$|^grn$|^gn$|^gr no|admission|adm no|^jr ?no)/.test(h) },
   { key: "className", priority: 8, test: (h) => /(^class$|^std$|standard|^class name)/.test(h) },
   { key: "section", priority: 8, test: (h) => /(^div$|division|^section$|^batch$)/.test(h) },
