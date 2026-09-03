@@ -184,18 +184,25 @@ export async function importStudents(fd: FormData): Promise<ImportSummary> {
     if (!importFees || (r.assignedFee <= 0 && r.previousBalance <= 0 && r.discount <= 0)) continue;
 
     const structure = findOrCreateStructure(cls.id, r.className);
+    // A concession can be larger than this year's fee — school sheets apply the
+    // discount to the whole outstanding ("Total Balance" = carried forward + this
+    // year), and a pupil with no new fee may still be given relief on old dues.
+    // Take what this year's fee can absorb, then apply the rest to the carried
+    // forward balance; clamping at zero here would silently discard the remainder.
     const payable = Math.max(0, r.assignedFee - r.discount);
+    const unabsorbed = Math.max(0, r.discount - r.assignedFee);
+    const previousBalance = Math.max(0, r.previousBalance - unabsorbed);
     let assn = Array.from(store.feeAssignments.values()).find(
       (a) => a.studentId === student!.id && (a.academicYearId ?? "") === academicYearId,
     );
     if (assn) {
-      if (assn.totalPaid > payable + r.previousBalance) {
+      if (assn.totalPaid > payable + previousBalance) {
         errors.push(`${r.name} (${r.admissionNo}): collected amount exceeds imported fees — fee row skipped.`);
         continue;
       }
       assn.feeStructureId = structure.id;
       assn.discount = r.discount;
-      assn.previousBalance = r.previousBalance;
+      assn.previousBalance = previousBalance;
       assn.totalPayable = payable;
       assn.discountByName = assn.discount > 0 ? (assn.discountByName ?? user.name) : undefined;
       assn.discountReason = assn.discount > 0 ? (assn.discountReason ?? "Imported from spreadsheet") : undefined;
@@ -210,7 +217,7 @@ export async function importStudents(fd: FormData): Promise<ImportSummary> {
         discountBy: r.discount > 0 ? user.id : undefined,
         discountByName: r.discount > 0 ? user.name : undefined,
         discountReason: r.discount > 0 ? "Imported from spreadsheet" : undefined,
-        previousBalance: r.previousBalance,
+        previousBalance,
         totalPayable: payable, totalPaid: 0,
         status: "PENDING" as const, createdAt: now,
       };
