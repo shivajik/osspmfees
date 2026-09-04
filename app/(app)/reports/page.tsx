@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { scopeByInstitute, store } from "@/lib/db/store";
+import { assignmentYearId, scopeByInstitute, store } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,13 +11,14 @@ import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { Download } from "lucide-react";
 import { InstituteFilter } from "./_filters";
 
-type Tab = "daily" | "monthly" | "student" | "pending" | "expense" | "cashbook" | "bank";
+type Tab = "daily" | "monthly" | "student" | "pending" | "discount" | "expense" | "cashbook" | "bank";
 
 const TABS: { key: Tab; label: string; needs?: string }[] = [
   { key: "daily", label: "Daily collection" },
   { key: "monthly", label: "Monthly collection" },
   { key: "student", label: "Student collection" },
   { key: "pending", label: "Pending fees" },
+  { key: "discount", label: "Discounts" },
   { key: "expense", label: "Expense summary" },
   { key: "cashbook", label: "Cash book" },
   { key: "bank", label: "Bank ledger" },
@@ -127,6 +128,7 @@ export default async function ReportsPage({
       {tab === "monthly" && <Monthly payments={payments} showInstitute={showInstitute} />}
       {tab === "student" && <StudentSummary assignments={assignments} showInstitute={showInstitute} />}
       {tab === "pending" && <Pending assignments={assignments} showInstitute={showInstitute} />}
+      {tab === "discount" && <Discounts assignments={assignments} payments={payments} showInstitute={showInstitute} />}
       {tab === "expense" && <ExpenseSummary expenses={expenses} showInstitute={showInstitute} />}
       {tab === "cashbook" && <Ledger accounts={accounts} txns={txns} type="CASH" showInstitute={showInstitute} />}
       {tab === "bank" && <Ledger accounts={accounts} txns={txns} type="BANK" showInstitute={showInstitute} />}
@@ -276,6 +278,100 @@ function Pending({ assignments, showInstitute }: { assignments: Assignments; sho
           { key: "cls", header: "Class", render: (r) => r.cls },
           { key: "bal", header: "Balance", render: (r) => <span className="text-amber-600 font-semibold">{formatCurrency(r.balance)}</span> },
           { key: "status", header: "Status", render: (r) => <Badge tone={r.status === "PARTIAL" ? "info" : "warning"}>{r.status}</Badge> },
+        ]}
+      />
+    </>
+  );
+}
+
+/**
+ * Every concession granted, from both places one can be given: a flat discount
+ * on the assignment, and a counter discount recorded on a receipt.
+ */
+function Discounts({
+  assignments, payments, showInstitute,
+}: {
+  assignments: Assignments;
+  payments: Payments;
+  showInstitute: boolean;
+}) {
+  const counterByAssignment = new Map<string, typeof payments>();
+  payments.forEach((p) => {
+    if (!p.discount) return;
+    const list = counterByAssignment.get(p.assignmentId) ?? [];
+    list.push(p);
+    counterByAssignment.set(p.assignmentId, list);
+  });
+
+  const rows = assignments
+    .map((a) => {
+      const counterPayments = counterByAssignment.get(a.id) ?? [];
+      const counter = counterPayments.reduce((sum, p) => sum + (p.discount ?? 0), 0);
+      const total = a.discount + counter;
+      if (total <= 0) return null;
+
+      const s = store.students.get(a.studentId);
+      const approvers = new Map<string, string>();
+      const addApprover = (name?: string, id?: string) => {
+        if (!name || approvers.has(name)) return;
+        approvers.set(name, (id ? store.users.get(id)?.role : "") ?? "");
+      };
+      if (a.discount > 0) addApprover(a.discountByName, a.discountBy);
+      counterPayments.forEach((p) => addApprover(p.discountByName, p.discountBy));
+
+      const reasons = Array.from(new Set([
+        a.discount > 0 ? a.discountReason : "",
+        ...counterPayments.map((p) => p.discountReason ?? ""),
+      ].filter(Boolean))) as string[];
+
+      return {
+        id: a.id,
+        instituteId: a.instituteId,
+        name: s?.name ?? "—",
+        adm: s?.admissionNo ?? "",
+        cls: s ? store.classes.get(s.classId)?.name ?? "" : "",
+        year: store.academicYears.get(assignmentYearId(a))?.name ?? "—",
+        structure: a.discount,
+        counter,
+        total,
+        approvers: Array.from(approvers, ([name, role]) => ({ name, role })),
+        reasons,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .sort((a, b) => b.total - a.total);
+
+  const total = rows.reduce((sum, r) => sum + r.total, 0);
+  const students = new Set(rows.map((r) => `${r.adm}|${r.instituteId}`)).size;
+
+  return (
+    <>
+      <Card className="mb-4">
+        <CardHeader>
+          <div>
+            <CardTitle>Total discount given</CardTitle>
+            <CardDescription>{students} student{students === 1 ? "" : "s"} · {rows.length} assignment{rows.length === 1 ? "" : "s"}</CardDescription>
+          </div>
+        </CardHeader>
+        <p className="text-3xl font-semibold text-sky-600">{formatCurrency(total)}</p>
+      </Card>
+      <DataTable rowKey={(r) => r.id} rows={rows} empty="No discounts given"
+        columns={[
+          ...instituteColumn<(typeof rows)[number]>(showInstitute),
+          { key: "adm", header: "Admission #", render: (r) => <span className="font-mono text-xs">{r.adm}</span> },
+          { key: "name", header: "Student", render: (r) => (
+            <div>
+              <div className="font-medium">{r.name}</div>
+              <div className="text-xs text-[var(--color-fg-muted)]">{[r.cls, r.year].filter(Boolean).join(" · ")}</div>
+            </div>
+          )},
+          { key: "struct", header: "On assignment", render: (r) => r.structure > 0 ? formatCurrency(r.structure) : <span className="text-[var(--color-fg-subtle)]">—</span> },
+          { key: "counter", header: "At counter", render: (r) => r.counter > 0 ? formatCurrency(r.counter) : <span className="text-[var(--color-fg-subtle)]">—</span> },
+          { key: "total", header: "Total discount", render: (r) => <span className="font-semibold text-sky-600">{formatCurrency(r.total)}</span> },
+          { key: "by", header: "Approved by", render: (r) => <Collectors people={r.approvers} /> },
+          { key: "why", header: "Reason", render: (r) => (
+            r.reasons.length ? <span className="text-xs">{r.reasons.join(" · ")}</span> : <span className="text-[var(--color-fg-subtle)]">—</span>
+          )},
         ]}
       />
     </>

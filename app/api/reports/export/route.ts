@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { scopeByInstitute, store } from "@/lib/db/store";
+import { assignmentYearId, scopeByInstitute, store } from "@/lib/db/store";
 import { renderTablePdf } from "@/lib/export/pdf";
 import { renderXlsx } from "@/lib/export/xlsx";
 
@@ -14,6 +14,7 @@ const TAB_TITLES: Record<string, string> = {
   monthly: "Monthly collection",
   student: "Student collection",
   pending: "Pending fees",
+  discount: "Discounts given",
   expense: "Expense summary",
   cashbook: "Cash book",
   bank: "Bank ledger",
@@ -93,6 +94,49 @@ export async function GET(req: Request) {
       const cls = s ? store.classes.get(s.classId)?.name ?? "" : "";
       rows.push([s?.admissionNo ?? "", s?.name ?? "", cls, a.totalPayable - a.totalPaid, a.status]);
     });
+  } else if (tab === "discount") {
+    const counter = new Map<string, { amount: number; by: Set<string>; reasons: Set<string> }>();
+    scopeByInstitute(store.feePayments.values(), scope).forEach((p) => {
+      if (!p.discount) return;
+      const cur = counter.get(p.assignmentId) ?? { amount: 0, by: new Set<string>(), reasons: new Set<string>() };
+      cur.amount += p.discount;
+      if (p.discountByName) cur.by.add(p.discountByName);
+      if (p.discountReason) cur.reasons.add(p.discountReason);
+      counter.set(p.assignmentId, cur);
+    });
+    rows = [[
+      ...(showInstitute ? ["Institute"] : []),
+      "Admission", "Student", "Class", "Academic year",
+      "On assignment", "At counter", "Total discount", "Approved by", "Reason",
+    ]];
+    scopeByInstitute(store.feeAssignments.values(), scope)
+      .map((a) => {
+        const c = counter.get(a.id);
+        return { a, counter: c?.amount ?? 0, by: c?.by ?? new Set<string>(), reasons: c?.reasons ?? new Set<string>() };
+      })
+      .filter((r) => r.a.discount + r.counter > 0)
+      .sort((x, y) => (y.a.discount + y.counter) - (x.a.discount + x.counter))
+      .forEach(({ a, counter: counterAmount, by, reasons }) => {
+        const student = store.students.get(a.studentId);
+        const cls = student ? store.classes.get(student.classId)?.name ?? "" : "";
+        const year = store.academicYears.get(assignmentYearId(a))?.name ?? "";
+        const approvers = new Set<string>(by);
+        if (a.discount > 0 && a.discountByName) approvers.add(a.discountByName);
+        const allReasons = new Set<string>(reasons);
+        if (a.discount > 0 && a.discountReason) allReasons.add(a.discountReason);
+        rows.push([
+          ...(showInstitute ? [instituteName(a.instituteId)] : []),
+          student?.admissionNo ?? "",
+          student?.name ?? "",
+          cls,
+          year,
+          a.discount,
+          counterAmount,
+          a.discount + counterAmount,
+          Array.from(approvers).join(", "),
+          Array.from(allReasons).join(" · "),
+        ]);
+      });
   } else if (tab === "expense") {
     const map = new Map<string, { count: number; total: number }>();
     scopeByInstitute(store.expenses.values(), scope).forEach((e) => {

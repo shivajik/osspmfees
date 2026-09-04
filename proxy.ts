@@ -12,6 +12,25 @@ const PUBLIC = new Set([
   "/api/health",
 ]);
 
+/**
+ * The one host this app answers on in production. Anything else that resolves
+ * here — a stray or wildcard subdomain, the bare apex — is bounced to it so a
+ * mistyped host can never serve the app under an unrecognised name.
+ * Override per environment with APP_CANONICAL_HOST.
+ */
+const CANONICAL_HOST = (process.env.APP_CANONICAL_HOST || "app.osspmandal.com").trim().toLowerCase();
+
+function isKnownHost(host: string): boolean {
+  const name = host.split(":")[0].trim().toLowerCase();
+  if (!name) return true;
+  if (name === CANONICAL_HOST) return true;
+  // Local development.
+  if (name === "localhost" || name === "127.0.0.1" || name === "[::1]" || name.endsWith(".localhost")) return true;
+  // Vercel production/preview deployment URLs, used for testing before a domain is attached.
+  if (name === "vercel.app" || name.endsWith(".vercel.app")) return true;
+  return false;
+}
+
 // Basic per-IP token bucket in-memory (per edge instance).
 const buckets = new Map<string, { count: number; resetAt: number }>();
 const LIMIT = 60;
@@ -31,6 +50,17 @@ function rateLimit(ip: string): boolean {
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Unknown host → send the visitor to the real app, keeping the path they asked
+  // for. Temporary (307) on purpose: a permanent redirect would stick in browser
+  // caches if the canonical host ever changes.
+  const host = req.headers.get("host") ?? "";
+  if (!isKnownHost(host)) {
+    return NextResponse.redirect(
+      new URL(`${pathname}${req.nextUrl.search}`, `https://${CANONICAL_HOST}`),
+      307,
+    );
+  }
 
   // Security headers on everything.
   const res = NextResponse.next();
