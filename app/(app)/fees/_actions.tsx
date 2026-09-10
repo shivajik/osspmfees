@@ -100,6 +100,8 @@ export function EditAssignmentButton({
   assignment: {
     id: string; studentName: string; feeStructureId: string; structureTotal: number; discount: number;
     discountReason?: string; discountByName?: string; previousBalance: number; totalPaid: number;
+    /** Set when the fees live on the assignment itself rather than a shared structure. */
+    customName?: string; customItems?: { head: string; amount: number }[];
   };
   /** Structures this student can be moved to — omit to keep the current one fixed. */
   structures?: { id: string; name: string; className: string; yearName: string; totalAmount: number }[];
@@ -116,6 +118,9 @@ export function EditAssignmentButton({
   const picked = structures.find((s) => s.id === structureId);
   const structureTotal = picked?.totalAmount ?? assignment.structureTotal;
   const structureChanged = structureId !== assignment.feeStructureId;
+  // Custom fees stay editable here as long as no shared structure is picked.
+  const isCustom = !assignment.feeStructureId;
+  const editingCustom = isCustom && structureId === "";
   const payable = Math.max(0, structureTotal - (Number.isFinite(discount) ? discount : 0));
   const gross = payable + (Number.isFinite(prev) ? prev : 0);
 
@@ -154,6 +159,11 @@ export function EditAssignmentButton({
                 hint={structureChanged ? "Changing this re-prices the assignment — receipts already issued stay untouched." : "The fee structure this student is charged under"}
               >
                 <Select name="feeStructureId" value={structureId} onChange={(e) => setStructureId(e.target.value)}>
+                  {isCustom && (
+                    <option value="">
+                      {assignment.customName || "Custom fees"} — this student only ({inr(assignment.structureTotal)})
+                    </option>
+                  )}
                   {structures.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} — {s.className} / {s.yearName} ({inr(s.totalAmount)})
@@ -163,9 +173,19 @@ export function EditAssignmentButton({
               </Field>
             </div>
           )}
-          <Field label="Discount *" hint={`Structure total ${inr(structureTotal)}`}>
+          {editingCustom && (
+            <>
+              <div className="sm:col-span-2">
+                <Field label="Fee name" hint="Shown on the receipt">
+                  <Input name="name" maxLength={120} defaultValue={assignment.customName ?? ""} placeholder="Custom fees" />
+                </Field>
+              </div>
+              <HeadsEditor initial={assignment.customItems} />
+            </>
+          )}
+          <Field label="Discount *" hint={editingCustom ? "Capped at the fee heads total above" : `Structure total ${inr(structureTotal)}`}>
             <Input
-              name="discount" type="number" min="0" max={structureTotal} step="1" required
+              name="discount" type="number" min="0" max={editingCustom ? undefined : structureTotal} step="1" required
               value={Number.isFinite(discount) ? String(discount) : ""}
               onChange={(e) => setDiscount(Number(e.target.value))}
             />
@@ -314,7 +334,8 @@ export function AssignFeesButton({
 
 type HeadRow = { head: string; amount: string };
 
-function HeadsEditor({ initial }: { initial?: { head: string; amount: number }[] }) {
+/** Head + amount rows, serialised into the `items`/`totalAmount` fields the fee actions parse. */
+export function HeadsEditor({ initial }: { initial?: { head: string; amount: number }[] }) {
   const [rows, setRows] = useState<HeadRow[]>(
     initial && initial.length
       ? initial.map((i) => ({ head: i.head, amount: String(i.amount) }))

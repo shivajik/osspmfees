@@ -5,6 +5,7 @@ import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac"
 import {
   pushAudit, store, nextReceiptNo,
   assignmentYearId, grossPayable, assignmentBalance, assignmentStatusFor, openPriorAssignments,
+  assignmentFees,
   type ChequeDetails,
 } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
@@ -451,6 +452,9 @@ const updateAssignmentSchema = z.object({
   assignmentId: z.string().min(1),
   /** Optional — set to move the student onto a different fee structure. */
   feeStructureId: z.string().optional().or(z.literal("")),
+  /** Per-student fee heads, editable while the assignment stays custom. */
+  items: z.string().max(2000).optional().or(z.literal("")),
+  name: z.string().max(120).optional().or(z.literal("")),
   discount: z.coerce.number().int().min(0).max(10_000_000),
   discountReason: z.string().max(160).optional().or(z.literal("")),
   previousBalance: z.coerce.number().int().min(0).max(100_000_000).optional(),
@@ -469,31 +473,52 @@ export async function updateAssignment(fd: FormData): Promise<{ error?: string }
   const assn = store.feeAssignments.get(assignmentId);
   if (!assn || assn.instituteId !== user.instituteId) return { error: "Assignment not found" };
 
-  // Moving a student onto a different structure re-prices the assignment.
-  const targetStructureId = parsed.data.feeStructureId || assn.feeStructureId;
-  const fs = store.feeStructures.get(targetStructureId);
-  if (!fs || fs.instituteId !== user.instituteId) return { error: "Fee structure not found" };
-  const structureChanged = targetStructureId !== assn.feeStructureId;
-  if (structureChanged) {
+  // Moving a student onto a different structure re-prices the assignment; an
+  // empty id keeps the per-student custom fees this assignment already carries.
+  const targetStructureId = parsed.data.feeStructureId ?? assn.feeStructureId;
+  const keepCustom = targetStructureId === "";
+  const fs = keepCustom ? null : store.feeStructures.get(targetStructureId);
+  if (!keepCustom && (!fs || fs.instituteId !== user.instituteId)) return { error: "Fee structure not found" };
+  const structureChanged = !!fs && fs.id !== assn.feeStructureId;
+  if (structureChanged && fs) {
     const duplicate = Array.from(store.feeAssignments.values()).some(
       (a) => a.id !== assn.id && a.studentId === assn.studentId && a.feeStructureId === fs.id,
     );
     if (duplicate) return { error: "This student already has that fee structure assigned" };
   }
-  if (discount > fs.totalAmount) return { error: "Discount cannot exceed the fee structure total" };
+  // Custom assignments can have their heads retyped in the same edit.
+  let newItems: { head: string; amount: number }[] | undefined;
+  if (keepCustom && parsed.data.items) {
+    newItems = parseItems(parsed.data.items, 0).filter((i) => i.amount > 0);
+    if (!newItems.length) return { error: "Add at least one fee head with an amount" };
+  }
+  const feeTotal = fs
+    ? fs.totalAmount
+    : newItems
+      ? newItems.reduce((sum, i) => sum + i.amount, 0)
+      : assignmentFees(assn).totalAmount;
+  if (discount > feeTotal) return { error: "Discount cannot exceed the fee total" };
 
-  const newPayable = Math.max(0, fs.totalAmount - discount);
+  const newPayable = Math.max(0, feeTotal - discount);
   const newPrev = previousBalance ?? assn.previousBalance ?? 0;
   if (assn.totalPaid > newPayable + newPrev) {
     return { error: "Already-collected amount exceeds the new payable — reduce the discount." };
   }
 
   const discountChanged = discount !== assn.discount;
-  assn.feeStructureId = fs.id;
+  if (fs) {
+    // Switching onto a shared structure retires this assignment's own heads.
+    assn.feeStructureId = fs.id;
+    assn.customName = undefined;
+    assn.customItems = undefined;
+  } else {
+    if (newItems) assn.customItems = newItems;
+    if (parsed.data.name?.trim()) assn.customName = parsed.data.name.trim();
+  }
   assn.discount = discount;
   assn.totalPayable = newPayable;
   assn.previousBalance = newPrev;
-  assn.academicYearId = fs.academicYearId;
+  if (fs) assn.academicYearId = fs.academicYearId;
   if (discountChanged) {
     assn.discountBy = discount > 0 ? user.id : undefined;
     assn.discountByName = discount > 0 ? user.name : undefined;
@@ -507,7 +532,109 @@ export async function updateAssignment(fd: FormData): Promise<{ error?: string }
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "fee_assignment.update", entity: "FeeAssignment", entityId: assn.id,
-    meta: { discount, previousBalance: newPrev, year: assignmentYearId(assn), feeStructureId: fs.id, structureChanged },
+    meta: { discount, previousBalance: newPrev, year: assignmentYearId(assn), feeStructureId: assn.feeStructureId || "custom", structureChanged },
   });
   await saveStore();
+}
+
+
+// ---------------------------------------------------------------------------
+// Per-student fees set up at the counter
+// ---------------------------------------------------------------------------
+
+const setupSchema = z.object({
+  studentId: z.string().min(1),
+  /** STRUCTURE reuses a shared structure; CUSTOM captures heads for this student only. */
+  mode: z.enum(["STRUCTURE", "CUSTOM"]),
+  feeStructureId: z.string().optional().or(z.literal("")),
+  name: z.string().max(120).optional().or(z.literal("")),
+  academicYearId: z.string().optional().or(z.literal("")),
+  items: z.string().max(2000).optional().or(z.literal("")),
+  discount: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+  discountReason: z.string().max(160).optional().or(z.literal("")),
+  carryForward: z.string().optional().or(z.literal("")),
+});
+
+/**
+ * Gives one student something to pay against — either a shared fee structure or
+ * heads typed on the spot. Returns the assignment so the caller can go straight
+ * to the collection screen.
+ */
+export async function setupStudentFees(fd: FormData): Promise<{ error?: string; assignmentId?: string }> {
+  const user = await requireUser();
+  const perms = permissionsForRole(user.role);
+  if (!hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE)) return { error: "Not authorized" };
+  if (!user.instituteId) return { error: "Institute scope required" };
+
+  const parsed = setupSchema.safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const { studentId, mode, discount, discountReason } = parsed.data;
+  const carryForward = parsed.data.carryForward !== "off" && parsed.data.carryForward !== "";
+
+  const student = store.students.get(studentId);
+  if (!student || student.instituteId !== user.instituteId) return { error: "Student not found" };
+
+  let feeStructureId = "";
+  let customName: string | undefined;
+  let customItems: { head: string; amount: number }[] | undefined;
+  let total = 0;
+  let academicYearId = "";
+
+  if (mode === "STRUCTURE") {
+    const fs = store.feeStructures.get(parsed.data.feeStructureId ?? "");
+    if (!fs || fs.instituteId !== user.instituteId) return { error: "Pick a fee structure" };
+    const duplicate = Array.from(store.feeAssignments.values()).some(
+      (a) => a.studentId === student.id && a.feeStructureId === fs.id,
+    );
+    if (duplicate) return { error: "This student already has that fee structure — collect against it instead." };
+    feeStructureId = fs.id;
+    total = fs.totalAmount;
+    academicYearId = fs.academicYearId;
+  } else {
+    const ay = store.academicYears.get(parsed.data.academicYearId ?? "");
+    if (!ay || ay.instituteId !== user.instituteId) return { error: "Pick an academic year" };
+    customItems = parseItems(parsed.data.items, 0).filter((i) => i.amount > 0);
+    if (!customItems.length) return { error: "Add at least one fee head with an amount" };
+    customName = parsed.data.name?.trim() || `Fees ${ay.name}`;
+    total = customItems.reduce((sum, i) => sum + i.amount, 0);
+    academicYearId = ay.id;
+  }
+
+  if (discount > total) return { error: "Discount cannot exceed the fee total" };
+
+  const now = new Date().toISOString();
+  const aid = uid("fa");
+
+  // Same carry-forward rule as a bulk assign: older unpaid years roll in here.
+  let previousBalance = 0;
+  const carriedFrom: string[] = [];
+  if (carryForward) {
+    for (const prior of openPriorAssignments(student.id, academicYearId)) {
+      previousBalance += assignmentBalance(prior);
+      prior.carriedForwardTo = aid;
+      prior.updatedAt = now;
+      carriedFrom.push(prior.id);
+    }
+  }
+
+  store.feeAssignments.set(aid, {
+    id: aid, instituteId: user.instituteId, studentId: student.id,
+    feeStructureId, customName, customItems,
+    academicYearId,
+    discount,
+    discountBy: discount > 0 ? user.id : undefined,
+    discountByName: discount > 0 ? user.name : undefined,
+    discountReason: discount > 0 ? (discountReason || undefined) : undefined,
+    previousBalance, carriedFrom: carriedFrom.length ? carriedFrom : undefined,
+    totalPayable: Math.max(0, total - discount),
+    totalPaid: 0, status: "PENDING", createdAt: now, updatedAt: now,
+  });
+
+  pushAudit({
+    instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
+    action: "fee_assignment.create", entity: "FeeAssignment", entityId: aid,
+    meta: { via: "counter_setup", mode, studentId: student.id, total, discount, carried: previousBalance },
+  });
+  await saveStore();
+  return { assignmentId: aid };
 }

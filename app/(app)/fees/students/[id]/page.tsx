@@ -41,14 +41,23 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
         description={`Admission #${student.admissionNo} · ${store.classes.get(student.classId)?.name ?? "—"} · year-wise dues and carried-forward balances`}
         actions={
           <div className="flex items-center gap-3">
-            {canCollect && collectTarget && (
+            {canCollect && (collectTarget ? (
               <Link
                 href={`/fees/collect/${collectTarget.assignment.id}`}
                 className="inline-flex h-9 items-center gap-2 rounded-md bg-[var(--color-brand)] px-3 text-sm font-medium text-white hover:brightness-110"
               >
                 <CreditCard className="h-4 w-4" />Collect fees
               </Link>
-            )}
+            ) : (
+              // Nothing outstanding to collect against — the counter is also where
+              // this student's fees get set up in the first place.
+              <Link
+                href={`/fees/collect?classId=${student.classId}&studentId=${student.id}`}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--color-border-strong)] px-3 text-sm font-medium hover:bg-[var(--color-surface-2)]"
+              >
+                <CreditCard className="h-4 w-4" />{rows.length === 0 ? "Set up fees" : "Add fees"}
+              </Link>
+            ))}
             <Link href="/fees" className="text-sm text-[var(--color-brand)] hover:underline">Back to fees</Link>
           </div>
         }

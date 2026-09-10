@@ -2,8 +2,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import {
-  scopeByInstitute, store, assignmentYearId, grossPayable, assignmentBalance,
-} from "@/lib/db/store";
+  scopeByInstitute, store, assignmentYearId, grossPayable, assignmentBalance, assignmentFees } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -186,7 +185,7 @@ export default async function FeesPage({
             );
           }},
           { key: "year", header: "Year", render: (r) => store.academicYears.get(assignmentYearId(r))?.name ?? "—" },
-          { key: "fs", header: "Structure", render: (r) => store.feeStructures.get(r.feeStructureId)?.name ?? "—" },
+          { key: "fs", header: "Structure", render: (r) => assignmentFees(r).name },
           { key: "prev", header: "Previous balance", render: (r) => (
             <span className={(r.previousBalance ?? 0) > 0 ? "font-medium text-orange-600" : "text-[var(--color-fg-subtle)]"}>
               {formatCurrency(r.previousBalance ?? 0)}
@@ -224,7 +223,9 @@ export default async function FeesPage({
                     id: r.id,
                     studentName: store.students.get(r.studentId)?.name ?? "",
                     feeStructureId: r.feeStructureId,
-                    structureTotal: store.feeStructures.get(r.feeStructureId)?.totalAmount ?? r.totalPayable + r.discount,
+                    structureTotal: assignmentFees(r).totalAmount,
+                    customName: r.customName,
+                    customItems: r.customItems,
                     discount: r.discount,
                     discountReason: r.discountReason,
                     discountByName: r.discountByName,
@@ -244,7 +245,7 @@ export default async function FeesPage({
               {canWriteStructure && (
                 <DeleteButton
                   kind="feeAssignment" id={r.id}
-                  label={`${store.students.get(r.studentId)?.name ?? "assignment"} — ${store.feeStructures.get(r.feeStructureId)?.name ?? ""}`}
+                  label={`${store.students.get(r.studentId)?.name ?? "assignment"} — ${assignmentFees(r).name}`}
                   what="fee assignment"
                 />
               )}

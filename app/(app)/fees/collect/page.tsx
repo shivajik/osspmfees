@@ -2,13 +2,14 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { scopeByInstitute, store, assignmentBalance, grossPayable } from "@/lib/db/store";
+import { scopeByInstitute, store, assignmentBalance, grossPayable, assignmentFees } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ListToolbar } from "@/components/list-toolbar";
 import { ArrowLeft, CreditCard, ReceiptText } from "lucide-react";
+import { SetupFeesPanel } from "./_setup-fees";
 
 export default async function CollectCounterPage({
   searchParams,
@@ -27,6 +28,18 @@ export default async function CollectCounterPage({
   const classId = pick("classId");
   const studentId = pick("studentId");
   const q = pick("q").toLowerCase();
+
+  // Setting fees is an admin/accountant job; a cashier only collects.
+  const canSetupFees = hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE);
+  const structureOptions = scopeByInstitute(store.feeStructures.values(), scope).map((fs) => ({
+    id: fs.id,
+    name: fs.name,
+    className: store.classes.get(fs.classId)?.name ?? "—",
+    yearName: store.academicYears.get(fs.academicYearId)?.name ?? "—",
+    totalAmount: fs.totalAmount,
+  }));
+  const yearOptions = scopeByInstitute(store.academicYears.values(), scope)
+    .map((y) => ({ id: y.id, name: y.name, isActive: y.isActive }));
 
   const classes = scopeByInstitute(store.classes.values(), scope);
   const students = scopeByInstitute(store.students.values(), scope).filter((s) => s.status === "ACTIVE");
@@ -197,9 +210,17 @@ export default async function CollectCounterPage({
             </CardHeader>
 
             {studentAssignments.length === 0 ? (
-              <p className="text-sm text-[var(--color-fg-muted)]">
-                No fee assignment for this student yet. An Institute Admin must assign a fee structure first.
-              </p>
+              canSetupFees ? (
+                <SetupFeesPanel
+                  student={{ id: selectedStudent.id, name: selectedStudent.name }}
+                  structures={structureOptions}
+                  years={yearOptions}
+                />
+              ) : (
+                <p className="text-sm text-[var(--color-fg-muted)]">
+                  No fees are set for this student yet. An Institute Admin or Accountant can set them up.
+                </p>
+              )
             ) : (
               <ul className="divide-y divide-[var(--color-border)]">
                 {studentAssignments.map((a) => {
@@ -207,7 +228,7 @@ export default async function CollectCounterPage({
                   return (
                     <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                       <div className="min-w-0">
-                        <div className="text-sm font-medium">{store.feeStructures.get(a.feeStructureId)?.name ?? "Fee"}</div>
+                        <div className="text-sm font-medium">{assignmentFees(a).name}</div>
                         <div className="text-xs text-[var(--color-fg-muted)]">
                           Payable {formatCurrency(grossPayable(a))} · Paid {formatCurrency(a.totalPaid)}
                           {(a.previousBalance ?? 0) > 0 ? ` · incl. ${formatCurrency(a.previousBalance ?? 0)} previous year` : ""}
@@ -234,6 +255,22 @@ export default async function CollectCounterPage({
                   );
                 })}
               </ul>
+            )}
+
+            {studentAssignments.length > 0 && canSetupFees && (
+              <details className="mt-3 border-t border-[var(--color-border)] pt-3">
+                <summary className="cursor-pointer text-sm font-medium text-[var(--color-brand)]">
+                  Add another fee for this student
+                </summary>
+                <div className="mt-3">
+                  <SetupFeesPanel
+                    student={{ id: selectedStudent.id, name: selectedStudent.name }}
+                    structures={structureOptions}
+                    years={yearOptions}
+                    hasExisting
+                  />
+                </div>
+              </details>
             )}
           </Card>
 

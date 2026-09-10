@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { store } from "@/lib/db/store";
+import { store, assignmentFees } from "@/lib/db/store";
 import { renderReceiptPdf } from "@/lib/export/pdf";
 
 export const runtime = "nodejs";
@@ -21,7 +21,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const student = store.students.get(p.studentId);
   const assn = store.feeAssignments.get(p.assignmentId);
-  const structure = assn ? store.feeStructures.get(assn.feeStructureId) : undefined;
+  const fees = assn ? assignmentFees(assn) : undefined;
   const cls = student ? store.classes.get(student.classId) : undefined;
   const batch = student ? store.batches.get(student.batchId) : undefined;
   const institute = store.institutes.get(p.instituteId);
@@ -50,7 +50,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       reference: p.reference,
       cashier: p.createdByName,
     },
-    structureName: structure?.name,
+    structureName: fees?.name,
     totals: assn ? {
       payable: assn.totalPayable,
       paid: assn.totalPaid,

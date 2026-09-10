@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { store, assignmentBalance, grossPayable } from "@/lib/db/store";
+import { store, assignmentBalance, grossPayable, assignmentFees } from "@/lib/db/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ArrowLeft, Download } from "lucide-react";
 import { PrintButton } from "./_print";
@@ -18,7 +18,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
 
   const student = store.students.get(p.studentId);
   const assn = store.feeAssignments.get(p.assignmentId);
-  const structure = assn ? store.feeStructures.get(assn.feeStructureId) : undefined;
+  const fees = assn ? assignmentFees(assn) : undefined;
   const cls = student ? store.classes.get(student.classId) : undefined;
   const batch = student ? store.batches.get(student.batchId) : undefined;
   const institute = store.institutes.get(p.instituteId);
@@ -82,7 +82,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           <tbody>
             <tr className="border-t border-[var(--color-border)]">
               <td className="px-3 py-3">
-                <div className="font-medium">{structure?.name ?? "Fee payment"}</div>
+                <div className="font-medium">{fees?.name ?? "Fee payment"}</div>
                 <div className="text-xs text-[var(--color-fg-muted)]">Assignment payment</div>
               </td>
               <td className="px-3 py-3 text-right font-semibold">{formatCurrency(p.amount)}</td>

@@ -59,7 +59,16 @@ export interface FeeStructure {
   createdAt: string;
 }
 export interface FeeAssignment {
-  id: string; instituteId: string; studentId: string; feeStructureId: string;
+  id: string; instituteId: string; studentId: string;
+  /** Shared fee structure this student is charged under — empty for custom fees. */
+  feeStructureId: string;
+  /**
+   * Fees defined for this one student instead of a shared structure. Village
+   * schools rarely have a class-wide structure, so the counter can set the
+   * heads per student; `feeStructureId` is empty when these are in use.
+   */
+  customName?: string;
+  customItems?: { head: string; amount: number }[];
   /** Denormalised for year-wise ledgers (copied from the fee structure). */
   academicYearId?: string;
   discount: number;
@@ -319,6 +328,31 @@ export function nextVoucherNo(): string {
 // Fee ledger helpers (previous balance / year-wise dues)
 // ---------------------------------------------------------------------------
 
+export interface AssignmentFees {
+  name: string;
+  totalAmount: number;
+  items: { head: string; amount: number }[];
+  /** True when the fees are defined on the assignment rather than a shared structure. */
+  custom: boolean;
+}
+
+/**
+ * What a student is charged, from whichever source applies — the shared fee
+ * structure, or the per-student heads captured at the counter.
+ */
+export function assignmentFees(a: FeeAssignment): AssignmentFees {
+  const fs = store.feeStructures.get(a.feeStructureId);
+  if (fs) return { name: fs.name, totalAmount: fs.totalAmount, items: fs.items, custom: false };
+  const items = a.customItems ?? [];
+  return {
+    name: a.customName || "Custom fees",
+    // Fall back to the stored payable for assignments written before heads existed.
+    totalAmount: items.length ? items.reduce((sum, i) => sum + i.amount, 0) : a.totalPayable + a.discount,
+    items,
+    custom: true,
+  };
+}
+
 /** Academic year of an assignment, falling back to its fee structure. */
 export function assignmentYearId(a: FeeAssignment): string {
   return a.academicYearId ?? store.feeStructures.get(a.feeStructureId)?.academicYearId ?? "";
@@ -367,12 +401,11 @@ export function studentLedger(studentId: string): LedgerRow[] {
     .sort((a, b) => yearSortKey(assignmentYearId(a)).localeCompare(yearSortKey(assignmentYearId(b))))
     .map((a) => {
       const yearId = assignmentYearId(a);
-      const fs = store.feeStructures.get(a.feeStructureId);
       return {
         assignment: a,
         yearId,
         yearName: store.academicYears.get(yearId)?.name ?? "—",
-        structureName: fs?.name ?? "—",
+        structureName: assignmentFees(a).name,
         previousBalance: a.previousBalance ?? 0,
         currentFees: a.totalPayable,
         discount: a.discount,

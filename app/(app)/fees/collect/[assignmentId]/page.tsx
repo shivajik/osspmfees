@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { store, assignmentBalance } from "@/lib/db/store";
+import { store, assignmentBalance, assignmentFees } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { CollectFeeForm } from "./_form";
 
@@ -22,7 +22,7 @@ export default async function CollectPaymentPage({ params }: { params: Promise<{
   if (balance <= 0) redirect("/fees");
 
   const student = store.students.get(assignment.studentId);
-  const structure = store.feeStructures.get(assignment.feeStructureId);
+  const fees = assignmentFees(assignment);
   const accounts = Array.from(store.accounts.values())
     .filter((a) => a.instituteId === user.instituteId)
     .map((a) => ({ id: a.id, name: a.name, type: a.type }));
@@ -37,7 +37,7 @@ export default async function CollectPaymentPage({ params }: { params: Promise<{
       paidPerHead.set(h.head, (paidPerHead.get(h.head) ?? 0) + h.amount);
     }
   }
-  const heads = (structure?.items ?? []).map((it) => ({
+  const heads = fees.items.map((it) => ({
     head: it.head,
     remaining: Math.max(0, it.amount - (paidPerHead.get(it.head) ?? 0)),
   }));

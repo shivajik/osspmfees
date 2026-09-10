@@ -53,18 +53,10 @@ export async function createStudent(fd: FormData): Promise<{ error?: string } | 
     createdAt: new Date().toISOString(),
   });
 
-  // Auto-create fee assignment if structure exists for this class + year
-  const structure = Array.from(store.feeStructures.values()).find(
-    (fs) => fs.instituteId === user.instituteId && fs.classId === parsed.data.classId && fs.academicYearId === parsed.data.academicYearId,
-  );
-  if (structure) {
-    const aid = uid("fa");
-    store.feeAssignments.set(aid, {
-      id: aid, instituteId: user.instituteId, studentId: id, feeStructureId: structure.id,
-      discount: 0, totalPayable: structure.totalAmount, totalPaid: 0, status: "PENDING",
-      createdAt: new Date().toISOString(),
-    });
-  }
+  // No fees are attached here on purpose: what a student pays is decided at the
+  // counter ("Collect fees" → Set up fees), where a structure can be picked or
+  // per-student heads entered. Silently charging the class structure was wrong
+  // for schools where no two students pay the same.
 
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
