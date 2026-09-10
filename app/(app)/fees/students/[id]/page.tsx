@@ -66,7 +66,17 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card><CardHeader><div><CardTitle>Fees charged</CardTitle><CardDescription>All years (after discount)</CardDescription></div></CardHeader><p className="text-2xl font-semibold">{formatCurrency(totalFees)}</p></Card>
         <Card><CardHeader><div><CardTitle>Total paid</CardTitle><CardDescription>All receipts</CardDescription></div></CardHeader><p className="text-2xl font-semibold text-emerald-600">{formatCurrency(totalPaid)}</p></Card>
-        <Card><CardHeader><div><CardTitle>Balance due</CardTitle><CardDescription>Current year incl. carry-forward</CardDescription></div></CardHeader><p className="text-2xl font-semibold text-amber-600">{formatCurrency(currentDue)}</p></Card>
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Balance due</CardTitle>
+              <CardDescription>{rows.length === 0 ? "Nothing charged yet" : "Current year incl. carry-forward"}</CardDescription>
+            </div>
+          </CardHeader>
+          {rows.length === 0
+            ? <p className="text-sm text-[var(--color-fg-muted)]">No fees set for this student yet.</p>
+            : <p className="text-2xl font-semibold text-amber-600">{formatCurrency(currentDue)}</p>}
+        </Card>
       </div>
 
       <div className="mb-2 text-sm font-medium">Year-wise ledger</div>

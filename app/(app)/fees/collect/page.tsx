@@ -46,7 +46,11 @@ export default async function CollectCounterPage({
   const assignments = scopeByInstitute(store.feeAssignments.values(), scope);
 
   const dueByStudent = new Map<string, number>();
+  // A student with no assignment at all owes nothing *yet* — that is not the
+  // same as being paid up, so the two are tracked apart.
+  const studentsWithFees = new Set<string>();
   for (const a of assignments) {
+    studentsWithFees.add(a.studentId);
     const bal = assignmentBalance(a);
     if (bal > 0) dueByStudent.set(a.studentId, (dueByStudent.get(a.studentId) ?? 0) + bal);
   }
@@ -130,6 +134,7 @@ export default async function CollectCounterPage({
               {classes.map((c) => {
                 const inClass = students.filter((s) => s.classId === c.id);
                 const pending = inClass.filter((s) => (dueByStudent.get(s.id) ?? 0) > 0).length;
+                const unset = inClass.filter((s) => !studentsWithFees.has(s.id)).length;
                 return (
                   <Link
                     key={c.id}
@@ -139,6 +144,9 @@ export default async function CollectCounterPage({
                     <div className="text-sm font-semibold">{c.name}</div>
                     <div className="mt-1 text-xs text-[var(--color-fg-muted)]">{inClass.length} students</div>
                     <div className="mt-2 text-xs font-medium text-amber-600">{pending} with dues</div>
+                    {unset > 0 && (
+                      <div className="mt-0.5 text-xs text-[var(--color-fg-subtle)]">{unset} fees not set</div>
+                    )}
                   </Link>
                 );
               })}
@@ -178,8 +186,10 @@ export default async function CollectCounterPage({
                       </div>
                       {due > 0 ? (
                         <span className="font-semibold text-amber-600">{formatCurrency(due)} due</span>
-                      ) : (
+                      ) : studentsWithFees.has(s.id) ? (
                         <Badge tone="success">No dues</Badge>
+                      ) : (
+                        <Badge tone="warning">Fees not set</Badge>
                       )}
                     </Link>
                   </li>
@@ -278,12 +288,20 @@ export default async function CollectCounterPage({
             <CardHeader>
               <div>
                 <CardTitle>Total outstanding</CardTitle>
-                <CardDescription>Across all assignments</CardDescription>
+                <CardDescription>
+                  {studentAssignments.length === 0 ? "Nothing charged yet" : "Across all assignments"}
+                </CardDescription>
               </div>
             </CardHeader>
-            <p className="text-2xl font-semibold text-amber-600">
-              {formatCurrency(dueByStudent.get(selectedStudent.id) ?? 0)}
-            </p>
+            {studentAssignments.length === 0 ? (
+              <p className="text-sm text-[var(--color-fg-muted)]">
+                No fees set for this student — set them up to start collecting.
+              </p>
+            ) : (
+              <p className="text-2xl font-semibold text-amber-600">
+                {formatCurrency(dueByStudent.get(selectedStudent.id) ?? 0)}
+              </p>
+            )}
             <div className="mt-5 text-xs font-semibold uppercase tracking-wider text-[var(--color-fg-subtle)]">Recent receipts</div>
             {studentPayments.length === 0 ? (
               <p className="mt-2 text-xs text-[var(--color-fg-muted)]">No payments yet.</p>
