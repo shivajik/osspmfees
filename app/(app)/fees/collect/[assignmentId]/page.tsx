@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { store, assignmentBalance, assignmentFees } from "@/lib/db/store";
+import { store, assignmentBalance, assignmentHeadOutstanding, previousDue as previousDueOf } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { CollectFeeForm } from "./_form";
 
@@ -22,27 +22,14 @@ export default async function CollectPaymentPage({ params }: { params: Promise<{
   if (balance <= 0) redirect("/fees");
 
   const student = store.students.get(assignment.studentId);
-  const fees = assignmentFees(assignment);
   const accounts = Array.from(store.accounts.values())
     .filter((a) => a.instituteId === user.instituteId)
     .map((a) => ({ id: a.id, name: a.name, type: a.type }));
 
-  // Sum what's already been paid against each structure head, across every
-  // prior payment on this assignment, so the form can suggest what's still
-  // owed per head instead of a generic checklist.
-  const paidPerHead = new Map<string, number>();
-  for (const p of store.feePayments.values()) {
-    if (p.assignmentId !== assignmentId) continue;
-    for (const h of p.feeHeadBreakup ?? []) {
-      paidPerHead.set(h.head, (paidPerHead.get(h.head) ?? 0) + h.amount);
-    }
-  }
-  const heads = fees.items.map((it) => ({
-    head: it.head,
-    remaining: Math.max(0, it.amount - (paidPerHead.get(it.head) ?? 0)),
-  }));
-
-  const previousDue = Math.max(0, (assignment.previousBalance ?? 0) - assignment.totalPaid);
+  // Per-head dues (previous-year balance first) — the server re-validates the
+  // allocation against the same numbers, so the form is only a convenience.
+  const heads = assignmentHeadOutstanding(assignment).map((h) => ({ head: h.head, remaining: h.amount }));
+  const previousDue = previousDueOf(assignment);
 
   return (
     <>

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   AssignFeesButton, NewStructureButton,
-  EditAssignmentButton, EditStructureButton, EditPaymentButton,
+  EditAssignmentButton, EditStructureButton, EditPaymentButton, ReversePaymentButton,
 } from "./_actions";
 import Link from "next/link";
 import { CreditCard } from "lucide-react";
@@ -31,6 +31,7 @@ export default async function FeesPage({
   const params = parseListParams(sp, { filterKeys: scope ? ["status", "academicYearId"] : ["status", "academicYearId", "instituteId"] });
 
   const canCollect = hasPermission(perms, PERMISSIONS.FEE_COLLECT) && !!scope;
+  const canAdjust = hasPermission(perms, PERMISSIONS.FEE_ADJUST) && !!scope;
   const canWriteStructure = hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE) && !!scope;
 
   const allAssignments = scopeByInstitute(store.feeAssignments.values(), scope);
@@ -271,19 +272,23 @@ export default async function FeesPage({
                       <div className="text-xs text-[var(--color-fg-muted)]">
                         {s?.name} · {p.mode}{p.cheque ? ` · cheque #${p.cheque.chequeNo}` : ""}
                       </div>
+                      {p.voidedAt && <div className="text-xs font-medium text-red-600">Reversed · {p.voidReason}</div>}
                       {(p.appliedToPrevious ?? 0) > 0 && (
                         <div className="text-xs text-orange-600">{formatCurrency(p.appliedToPrevious ?? 0)} adjusted to previous balance</div>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="text-right">
-                        <div className="font-semibold">{formatCurrency(p.amount)}</div>
+                        <div className={p.voidedAt ? "font-semibold line-through text-[var(--color-fg-muted)]" : "font-semibold"}>{formatCurrency(p.amount)}</div>
                         <div className="text-xs text-[var(--color-fg-subtle)]">{formatDate(p.paidAt)}</div>
                       </div>
-                      {canCollect && (
+                      {canCollect && !p.voidedAt && (
                         <EditPaymentButton
                           payment={{ id: p.id, receiptNo: p.receiptNo, amount: p.amount, mode: p.mode, reference: p.reference, cheque: p.cheque }}
                         />
+                      )}
+                      {canAdjust && !p.voidedAt && (
+                        <ReversePaymentButton payment={{ id: p.id, receiptNo: p.receiptNo, amount: p.amount, discount: p.discount }} />
                       )}
                     </div>
                   </li>

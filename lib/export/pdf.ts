@@ -19,8 +19,22 @@ async function fonts(pdf: PDFDocument) {
   return { regular, bold };
 }
 
+/**
+ * The standard PDF fonts only cover WinAnsi (Latin-1). Anything outside it —
+ * the ₹ sign, dashes, Devanagari names — throws and fails the whole PDF, so map
+ * what we can and replace the rest.
+ */
+export function pdfSafe(text: string): string {
+  return text
+    .replace(/₹\s?/g, "Rs. ")
+    .replace(/[–—−]/g, "-")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[^\x00-\xFF]/g, "?");
+}
+
 function drawText(page: PDFPage, text: string, x: number, y: number, font: PDFFont, size = 10, color = rgb(0.1, 0.11, 0.14)) {
-  page.drawText(String(text ?? ""), { x, y, size, font, color });
+  page.drawText(pdfSafe(String(text ?? "")), { x, y, size, font, color });
 }
 
 export async function renderTablePdf(opts: PdfTableOptions): Promise<Uint8Array> {
@@ -46,7 +60,7 @@ export async function renderTablePdf(opts: PdfTableOptions): Promise<Uint8Array>
     page.drawRectangle({ x: MARGIN, y: y - 4, width: PAGE_W - MARGIN * 2, height: LINE_H + 2, color: rgb(0.95, 0.96, 0.98) });
     let x = MARGIN + 6;
     opts.columns.forEach((c, i) => {
-      const tx = c.align === "right" ? x + widths[i] - 12 - bold.widthOfTextAtSize(c.header, 9) : x;
+      const tx = c.align === "right" ? x + widths[i] - 12 - bold.widthOfTextAtSize(pdfSafe(String(c.header)), 9) : x;
       drawText(page, c.header, tx, y, bold, 9, rgb(0.35, 0.38, 0.45));
       x += widths[i];
     });
@@ -64,7 +78,7 @@ export async function renderTablePdf(opts: PdfTableOptions): Promise<Uint8Array>
     row.forEach((cell, i) => {
       const text = String(cell ?? "");
       const col = opts.columns[i];
-      const w = regular.widthOfTextAtSize(text, 9);
+      const w = regular.widthOfTextAtSize(pdfSafe(String(text)), 9);
       const tx = col.align === "right" ? x + widths[i] - 12 - w : x;
       drawText(page, text, tx, y, regular, 9);
       x += widths[i];
@@ -88,6 +102,11 @@ export interface ReceiptData {
   payment: { amount: number; mode: string; accountName?: string; reference?: string; cashier?: string };
   structureName?: string;
   totals?: { payable: number; paid: number; balance: number };
+  /** Per-head allocation of what this receipt settled. */
+  breakup?: { head: string; amount: number }[];
+  discount?: number;
+  /** Present when the receipt was reversed — printed as a banner so it can't pass as valid. */
+  reversed?: { at: string; by: string; reason: string };
   currency: string;
 }
 
@@ -104,14 +123,14 @@ export async function renderReceiptPdf(r: ReceiptData): Promise<Uint8Array> {
   let y = PAGE_H - MARGIN;
 
   drawText(page, r.institute.name, MARGIN, y, bold, 16, dark);
-  drawText(page, "FEE RECEIPT", PAGE_W - MARGIN - bold.widthOfTextAtSize("FEE RECEIPT", 10), y, bold, 10, grey);
+  drawText(page, "FEE RECEIPT", PAGE_W - MARGIN - bold.widthOfTextAtSize(pdfSafe(String("FEE RECEIPT")), 10), y, bold, 10, grey);
   y -= 16;
   if (r.institute.address) { drawText(page, r.institute.address, MARGIN, y, regular, 9, grey); }
-  drawText(page, `No: ${r.receiptNo}`, PAGE_W - MARGIN - bold.widthOfTextAtSize(`No: ${r.receiptNo}`, 12), y, bold, 12, dark);
+  drawText(page, `No: ${r.receiptNo}`, PAGE_W - MARGIN - bold.widthOfTextAtSize(pdfSafe(String(`No: ${r.receiptNo}`)), 12), y, bold, 12, dark);
   y -= 12;
   const contact = [r.institute.phone, r.institute.email].filter(Boolean).join("  ·  ");
   if (contact) { drawText(page, contact, MARGIN, y, regular, 9, grey); }
-  drawText(page, r.paidAt.slice(0, 10), PAGE_W - MARGIN - regular.widthOfTextAtSize(r.paidAt.slice(0, 10), 9), y, regular, 9, grey);
+  drawText(page, r.paidAt.slice(0, 10), PAGE_W - MARGIN - regular.widthOfTextAtSize(pdfSafe(r.paidAt.slice(0, 10)), 9), y, regular, 9, grey);
   y -= 20;
 
   page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 1, color: rgb(0.85, 0.87, 0.9) });
@@ -139,18 +158,28 @@ export async function renderReceiptPdf(r: ReceiptData): Promise<Uint8Array> {
 
   page.drawRectangle({ x: MARGIN, y: y - 4, width: PAGE_W - MARGIN * 2, height: 20, color: rgb(0.95, 0.96, 0.98) });
   drawText(page, "DESCRIPTION", MARGIN + 8, y + 2, bold, 8, grey);
-  drawText(page, "AMOUNT", PAGE_W - MARGIN - 8 - bold.widthOfTextAtSize("AMOUNT", 8), y + 2, bold, 8, grey);
+  drawText(page, "AMOUNT", PAGE_W - MARGIN - 8 - bold.widthOfTextAtSize(pdfSafe(String("AMOUNT")), 8), y + 2, bold, 8, grey);
   y -= 22;
 
-  drawText(page, r.structureName ?? "Fee payment", MARGIN + 8, y, regular, 10, dark);
-  const amt = money(r.payment.amount, r.currency);
-  drawText(page, amt, PAGE_W - MARGIN - 8 - bold.widthOfTextAtSize(amt, 11), y, bold, 11, dark);
-  y -= 20;
+  const lines = r.breakup?.length ? r.breakup : [{ head: r.structureName ?? "Fee payment", amount: r.payment.amount }];
+  for (const line of lines) {
+    drawText(page, line.head, MARGIN + 8, y, regular, 10, dark);
+    const amt = money(line.amount, r.currency);
+    drawText(page, amt, PAGE_W - MARGIN - 8 - regular.widthOfTextAtSize(pdfSafe(String(amt)), 10), y, regular, 10, dark);
+    y -= 16;
+  }
+  if (r.discount && r.discount > 0) {
+    drawText(page, "Less: discount / concession", MARGIN + 8, y, regular, 10, grey);
+    const d = `- ${money(r.discount, r.currency)}`;
+    drawText(page, d, PAGE_W - MARGIN - 8 - regular.widthOfTextAtSize(pdfSafe(String(d)), 10), y, regular, 10, grey);
+    y -= 16;
+  }
+  y -= 4;
   page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.5, color: rgb(0.85, 0.87, 0.9) });
   y -= 16;
   drawText(page, "TOTAL RECEIVED", MARGIN + 8, y, bold, 10, grey);
   const totalStr = money(r.payment.amount, r.currency);
-  drawText(page, totalStr, PAGE_W - MARGIN - 8 - bold.widthOfTextAtSize(totalStr, 14), y, bold, 14, dark);
+  drawText(page, totalStr, PAGE_W - MARGIN - 8 - bold.widthOfTextAtSize(pdfSafe(String(totalStr)), 14), y, bold, 14, dark);
   y -= 30;
 
   if (r.totals) {
@@ -158,6 +187,14 @@ export async function renderReceiptPdf(r: ReceiptData): Promise<Uint8Array> {
     drawText(page, `Paid to date: ${money(r.totals.paid, r.currency)}`, MARGIN + 180, y, regular, 9, grey);
     drawText(page, `Balance: ${money(r.totals.balance, r.currency)}`, MARGIN + 360, y, regular, 9, grey);
     y -= 24;
+  }
+
+  if (r.reversed) {
+    const red = rgb(0.8, 0.1, 0.1);
+    page.drawRectangle({ x: MARGIN, y: y - 30, width: PAGE_W - MARGIN * 2, height: 40, borderColor: red, borderWidth: 1.5 });
+    drawText(page, "REVERSED - NOT VALID AS PROOF OF PAYMENT", MARGIN + 10, y - 6, bold, 11, red);
+    drawText(page, `On ${r.reversed.at.slice(0, 10)} by ${r.reversed.by}: ${r.reversed.reason}`.slice(0, 110), MARGIN + 10, y - 22, regular, 9, red);
+    y -= 48;
   }
 
   drawText(page, "Thank you for your payment. This is a system-generated receipt.", MARGIN, MARGIN + 24, regular, 8, grey);

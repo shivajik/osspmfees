@@ -140,6 +140,8 @@ function tables(): Array<{ name: string; rows: Row[] }> {
         feeStructureId: a.feeStructureId, discount: num(a.discount),
         totalPayable: num(a.totalPayable), totalPaid: num(a.totalPaid),
         status: a.status, createdAt: ts(a.createdAt), updatedAt: ts(a.updatedAt ?? a.createdAt),
+        academicYearId: str(a.academicYearId), previousBalance: num(a.previousBalance ?? 0),
+        extraCharges: a.extraItems?.length ? a.extraItems : null,
       })),
     },
     {
@@ -149,7 +151,12 @@ function tables(): Array<{ name: string; rows: Row[] }> {
         studentId: p.studentId, receiptNo: p.receiptNo, amount: num(p.amount),
         mode: p.mode, accountId: p.accountId ?? null,
         reference: str(p.reference), paidAt: ts(p.paidAt),
-        createdAt: ts(p.paidAt), createdBy: str(p.createdBy),
+        createdAt: ts(p.recordedAt ?? p.paidAt), createdBy: str(p.createdBy),
+        feeHeadBreakup: p.feeHeadBreakup ?? null,
+        appliedToPrevious: num(p.appliedToPrevious ?? 0), appliedToCurrent: num(p.appliedToCurrent ?? p.amount),
+        discount: num(p.discount ?? 0),
+        voidedAt: ts(p.voidedAt), voidedBy: str(p.voidedBy), voidReason: str(p.voidReason),
+        history: p.history?.length ? p.history : null,
       })),
     },
     {

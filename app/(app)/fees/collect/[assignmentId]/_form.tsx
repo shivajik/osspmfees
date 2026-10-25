@@ -34,7 +34,9 @@ export function CollectFeeForm({
   heads: HeadRef[];
   accounts: { id: string; name: string; type: "BANK" | "CASH" }[];
 }) {
-  const allHeads: HeadRef[] = previousDue > 0 ? [{ head: "Previous year balance", remaining: previousDue }, ...heads] : heads;
+  // `heads` already lists the previous-year balance first when there is one.
+  const allHeads = heads;
+  const today = new Date().toISOString().slice(0, 10);
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +122,9 @@ export function CollectFeeForm({
           <Input
             name="amount" type="number" min="0" max={Math.max(0, balance - safeDiscount)} step="1" required
             value={Number.isFinite(amount) ? String(amount) : ""}
-            onChange={(e) => applyAmount(Number(e.target.value))}
+            // Clamp what is shown, not just what is submitted, so the box never
+            // displays more than the outstanding balance.
+            onChange={(e) => applyAmount(Math.min(Math.max(Number(e.target.value) || 0, 0), Math.max(0, balance - safeDiscount)))}
           />
         </Field>
         <Field label="Mode *">
@@ -137,7 +141,7 @@ export function CollectFeeForm({
         <div className="sm:col-span-2">
           <Field
             label="Fee types / heads *"
-            hint="Automatically split from the assigned fee structure — adjust any head if needed."
+            hint="Auto-filled in priority order (previous-year dues first). Untick or retype a head to allocate manually."
           >
             <div className="flex max-h-64 flex-col gap-2 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
               {allHeads.length === 0 && <p className="text-xs text-[var(--color-fg-muted)]">No fee structure heads found for this assignment.</p>}
@@ -228,7 +232,10 @@ export function CollectFeeForm({
           </div>
         </div>
 
-        <div className="sm:col-span-2">
+        <Field label="Payment date *" hint="Change only when entering a receipt late">
+          <Input name="paidOn" type="date" required defaultValue={today} max={today} />
+        </Field>
+        <div>
           <Field label="Account *">
             <Select name="accountId" defaultValue={defaultAccount?.id ?? ""} required>
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}

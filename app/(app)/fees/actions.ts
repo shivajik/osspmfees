@@ -4,10 +4,12 @@ import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import {
   pushAudit, store, nextReceiptNo,
-  assignmentYearId, grossPayable, assignmentBalance, assignmentStatusFor, openPriorAssignments,
-  assignmentFees,
+  assignmentYearId, assignmentBalance, assignmentStatusFor, openPriorAssignments,
+  baseFees, extraChargesTotal, conditionalHeadsCharged, assignmentHeadOutstanding, assignmentPayments, isActivePayment,
   type ChequeDetails,
 } from "@/lib/db/store";
+import { parsePaymentDate, splitSettlement, validateAllocation } from "@/lib/fees/rules";
+import { CONDITIONAL_FEE_HEADS, FEE_HEADS } from "@/lib/fee-heads";
 import { uid } from "@/lib/utils";
 import { saveStore } from "@/lib/db/persistence";
 
@@ -46,6 +48,8 @@ const collectSchema = z.object({
   feeHead: z.string().max(300).optional().or(z.literal("")),
   feeHeads: z.string().max(2000).optional().or(z.literal("")),
   reference: z.string().max(80).optional().or(z.literal("")),
+  /** Date the money was received (YYYY-MM-DD); blank = now. */
+  paidOn: z.string().max(10).optional().or(z.literal("")),
   ...chequeFields,
 });
 
@@ -70,24 +74,23 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
 
   const cq = buildCheque(mode, parsed.data);
   if (cq.error) return { error: cq.error };
+  const paidOn = parsePaymentDate(parsed.data.paidOn || undefined);
+  if (paidOn.error) return { error: paidOn.error };
 
-  // Optional per-head split — must add up to what this payment settles.
-  let feeHeadBreakup: { head: string; amount: number }[] | undefined;
-  if (parsed.data.feeHeads) {
-    try {
-      const raw = JSON.parse(parsed.data.feeHeads) as { head?: unknown; amount?: unknown }[];
-      feeHeadBreakup = (Array.isArray(raw) ? raw : [])
-        .map((r) => ({ head: String(r.head ?? "").slice(0, 60), amount: Math.max(0, Math.round(Number(r.amount) || 0)) }))
-        .filter((r) => r.head && r.amount > 0);
-    } catch {
-      return { error: "Invalid fee head selection" };
-    }
+  // Every payment is allocated to fee heads; each head is capped at what is
+  // still owed on it, so a head can never be over-collected.
+  let feeHeadBreakup: { head: string; amount: number }[];
+  try {
+    const raw = JSON.parse(parsed.data.feeHeads || "[]") as { head?: unknown; amount?: unknown }[];
+    feeHeadBreakup = (Array.isArray(raw) ? raw : [])
+      .map((r) => ({ head: String(r.head ?? "").trim().slice(0, 60), amount: Number(r.amount) }))
+      .filter((r) => r.head && r.amount !== 0);
+  } catch {
+    return { error: "Invalid fee head selection" };
   }
-  if (!feeHeadBreakup?.length) return { error: "Select at least one fee head for this payment" };
-  const headsTotal = feeHeadBreakup.reduce((s, h) => s + h.amount, 0);
-  if (headsTotal !== amount + discount) {
-    return { error: `Fee head amounts add up to ₹${headsTotal.toLocaleString("en-IN")} but this payment settles ₹${(amount + discount).toLocaleString("en-IN")}. Adjust the head amounts so both match.` };
-  }
+  const settled = amount + discount;
+  const allocationError = validateAllocation(feeHeadBreakup, assignmentHeadOutstanding(assn), settled);
+  if (allocationError) return { error: allocationError };
 
   const now = new Date().toISOString();
   const paymentId = uid("pay");
@@ -95,10 +98,8 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
 
   // Payments (and counter discounts) settle carried-forward previous balance
   // first, then the current year's fees.
-  const prevDue = Math.max(0, (assn.previousBalance ?? 0) - assn.totalPaid);
-  const settled = amount + discount;
-  const appliedToPrevious = Math.min(settled, prevDue);
-  const appliedToCurrent = settled - appliedToPrevious;
+  const { toPrevious: appliedToPrevious, toCurrent: appliedToCurrent } =
+    splitSettlement(assn.previousBalance ?? 0, assn.totalPaid, settled);
 
   store.feePayments.set(paymentId, {
     id: paymentId, instituteId: user.instituteId,
@@ -112,7 +113,7 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
     discountByName: discount > 0 ? user.name : undefined,
     discountReason: discount > 0 ? (discountReason || undefined) : undefined,
     cheque: cq.cheque,
-    reference: reference || undefined, paidAt: now,
+    reference: reference || undefined, paidAt: paidOn.iso!, recordedAt: now,
     createdBy: user.id, createdByName: user.name,
   });
 
@@ -128,14 +129,14 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
     store.transactions.set(txnId, {
       id: txnId, instituteId: user.instituteId, accountId,
       direction: "CREDIT", amount, balanceAfter: account.currentBal,
-      reference: `Fee ${receiptNo}`, paymentId, occurredAt: now, createdAt: now,
+      reference: `Fee ${receiptNo}`, paymentId, occurredAt: paidOn.iso!, createdAt: now,
     });
   }
 
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "fee.collect", entity: "FeePayment", entityId: paymentId,
-    meta: { amount, discount, discountReason: discountReason || null, mode, feeHead: feeHead ?? null, receiptNo, appliedToPrevious, appliedToCurrent },
+    meta: { amount, discount, discountReason: discountReason || null, mode, feeHead: feeHead ?? null, receiptNo, appliedToPrevious, appliedToCurrent, paidAt: paidOn.iso },
   });
   await saveStore();
   return { paymentId };
@@ -143,12 +144,18 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
 
 const editPaymentSchema = z.object({
   paymentId: z.string().min(1),
-  amount: z.coerce.number().int().positive().max(10_000_000),
   mode: z.enum(["CASH", "BANK", "CARD", "UPI", "CHEQUE", "ONLINE"]),
   reference: z.string().max(80).optional().or(z.literal("")),
+  reason: z.string().max(160).optional().or(z.literal("")),
   ...chequeFields,
 });
 
+/**
+ * Corrects a receipt's payment details (mode, reference, cheque). The amount
+ * and fee-head split are deliberately not editable: a wrong amount is fixed by
+ * reversing the receipt and recording a new one, so the original stays on
+ * record. Every edit keeps the previous values in `history`.
+ */
 export async function updatePayment(fd: FormData): Promise<{ error?: string } | void> {
   const user = await requireUser();
   const perms = permissionsForRole(user.role);
@@ -157,56 +164,190 @@ export async function updatePayment(fd: FormData): Promise<{ error?: string } | 
 
   const parsed = editPaymentSchema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
-  const { paymentId, amount, mode, reference } = parsed.data;
+  const { paymentId, mode, reference, reason } = parsed.data;
 
   const pay = store.feePayments.get(paymentId);
   if (!pay || pay.instituteId !== user.instituteId) return { error: "Payment not found" };
-  const assn = store.feeAssignments.get(pay.assignmentId);
-  if (!assn) return { error: "Assignment not found" };
+  if (!isActivePayment(pay)) return { error: "This receipt was reversed and can no longer be edited" };
 
   const cq = buildCheque(mode, parsed.data);
   if (cq.error) return { error: cq.error };
 
-  const delta = amount - pay.amount;
-  const newPaid = assn.totalPaid + delta;
-  if (newPaid < 0) return { error: "Amount too low" };
-  if (newPaid > grossPayable(assn)) return { error: "Amount exceeds total payable for this assignment" };
-
   const now = new Date().toISOString();
-  if (delta !== 0 && pay.accountId) {
-    const acc = store.accounts.get(pay.accountId);
-    if (acc) {
-      acc.currentBal += delta;
-      const txnId = uid("txn");
-      store.transactions.set(txnId, {
-        id: txnId, instituteId: user.instituteId, accountId: acc.id,
-        direction: delta > 0 ? "CREDIT" : "DEBIT", amount: Math.abs(delta),
-        balanceAfter: acc.currentBal, reference: `Adjustment ${pay.receiptNo}`,
-        paymentId: pay.id, occurredAt: now, createdAt: now,
-      });
-    }
-  }
-
-  const settledOther = assn.totalPaid - pay.amount - (pay.discount ?? 0);
-  const prevDue = Math.max(0, (assn.previousBalance ?? 0) - settledOther);
-  pay.amount = amount;
+  pay.history = [...(pay.history ?? []), {
+    at: now, by: user.id, byName: user.name,
+    mode: pay.mode, reference: pay.reference, chequeNo: pay.cheque?.chequeNo,
+    reason: reason || undefined,
+  }];
+  const previous = { mode: pay.mode, reference: pay.reference ?? null };
   pay.mode = mode;
   pay.reference = reference || undefined;
   pay.cheque = cq.cheque;
-  pay.appliedToPrevious = Math.min(amount + (pay.discount ?? 0), prevDue);
-  pay.appliedToCurrent = amount + (pay.discount ?? 0) - pay.appliedToPrevious;
   pay.updatedAt = now;
   pay.updatedBy = user.id;
   pay.updatedByName = user.name;
 
-  assn.totalPaid = newPaid;
+  pushAudit({
+    instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
+    action: "fee.payment_update", entity: "FeePayment", entityId: pay.id,
+    meta: { receiptNo: pay.receiptNo, previous, mode, reference: reference || null, reason: reason || null },
+  });
+  await saveStore();
+}
+
+const reverseSchema = z.object({
+  paymentId: z.string().min(1),
+  reason: z.string().trim().min(3, "Enter a reason for reversing this receipt").max(160),
+});
+
+/**
+ * Reverses a receipt: the record is kept (marked reversed), the student's
+ * balance goes back up, and any money is debited from the account it was
+ * credited to. Once a year's dues are carried forward that year is frozen.
+ */
+export async function reversePayment(fd: FormData): Promise<{ error?: string } | void> {
+  const user = await requireUser();
+  const perms = permissionsForRole(user.role);
+  if (!hasPermission(perms, PERMISSIONS.FEE_ADJUST)) return { error: "Not authorized" };
+  if (!user.instituteId) return { error: "Institute scope required" };
+
+  const parsed = reverseSchema.safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const { paymentId, reason } = parsed.data;
+
+  const pay = store.feePayments.get(paymentId);
+  if (!pay || pay.instituteId !== user.instituteId) return { error: "Payment not found" };
+  if (!isActivePayment(pay)) return { error: "This receipt is already reversed" };
+  const assn = store.feeAssignments.get(pay.assignmentId);
+  if (!assn) return { error: "Assignment not found" };
+  if (assn.carriedForwardTo) {
+    return { error: "This year's balance was already carried forward — the receipt can no longer be reversed." };
+  }
+
+  const settled = pay.amount + (pay.discount ?? 0);
+  if (assn.totalPaid < settled) return { error: "Ledger is inconsistent for this assignment — contact support" };
+
+  const now = new Date().toISOString();
+  if (pay.amount > 0 && pay.accountId) {
+    const acc = store.accounts.get(pay.accountId);
+    if (acc && acc.instituteId === user.instituteId) {
+      acc.currentBal -= pay.amount;
+      const txnId = uid("txn");
+      store.transactions.set(txnId, {
+        id: txnId, instituteId: user.instituteId, accountId: acc.id,
+        direction: "DEBIT", amount: pay.amount, balanceAfter: acc.currentBal,
+        reference: `Reversal ${pay.receiptNo}`, paymentId: pay.id, occurredAt: now, createdAt: now,
+      });
+    }
+  }
+
+  assn.totalPaid -= settled;
+  if (pay.discount) assn.collectionDiscount = Math.max(0, (assn.collectionDiscount ?? 0) - pay.discount);
+  assn.status = assignmentStatusFor(assn);
+  assn.updatedAt = now;
+
+  pay.voidedAt = now;
+  pay.voidedBy = user.id;
+  pay.voidedByName = user.name;
+  pay.voidReason = reason;
+
+  pushAudit({
+    instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
+    action: "fee.payment_reverse", entity: "FeePayment", entityId: pay.id,
+    meta: { receiptNo: pay.receiptNo, amount: pay.amount, discount: pay.discount ?? 0, reason, studentId: pay.studentId },
+  });
+  await saveStore();
+}
+
+// ---------------------------------------------------------------------------
+// Conditional charges (e.g. TC fees) added to one student
+// ---------------------------------------------------------------------------
+
+const chargeSchema = z.object({
+  assignmentId: z.string().min(1),
+  head: z.string().trim().min(2).max(60),
+  amount: z.coerce.number().int().positive().max(10_000_000),
+  reason: z.string().trim().max(160).optional().or(z.literal("")),
+});
+
+export async function addFeeCharge(fd: FormData): Promise<{ error?: string } | void> {
+  const user = await requireUser();
+  const perms = permissionsForRole(user.role);
+  if (!hasPermission(perms, PERMISSIONS.FEE_ADJUST)) return { error: "Not authorized" };
+  if (!user.instituteId) return { error: "Institute scope required" };
+
+  const parsed = chargeSchema.safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const { assignmentId, head, amount, reason } = parsed.data;
+
+  const assn = store.feeAssignments.get(assignmentId);
+  if (!assn || assn.instituteId !== user.instituteId) return { error: "Assignment not found" };
+  if (assn.carriedForwardTo) return { error: "This year is closed (balance carried forward) — add the charge to the latest year." };
+  // A conditional head is charged once per year; a second request is almost
+  // always a double click or a mistake, and would inflate the dues.
+  if (
+    (assn.extraItems ?? []).some((e) => e.head.toLowerCase() === head.toLowerCase()) ||
+    conditionalHeadsCharged(assn.studentId, assignmentYearId(assn)).has(head.toLowerCase())
+  ) {
+    return { error: `${head} is already charged to this student for this year` };
+  }
+  if (!(FEE_HEADS as readonly string[]).includes(head) && !reason) {
+    return { error: "Give a reason for a custom fee head" };
+  }
+
+  const now = new Date().toISOString();
+  const charge = { id: uid("chg"), head, amount, reason: reason || undefined, addedAt: now, addedBy: user.id, addedByName: user.name };
+  assn.extraItems = [...(assn.extraItems ?? []), charge];
+  assn.totalPayable += amount;
   assn.status = assignmentStatusFor(assn);
   assn.updatedAt = now;
 
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
-    action: "fee.payment_update", entity: "FeePayment", entityId: pay.id,
-    meta: { amount, delta, mode },
+    action: "fee_charge.add", entity: "FeeAssignment", entityId: assn.id,
+    meta: { chargeId: charge.id, head, amount, reason: reason || null, studentId: assn.studentId },
+  });
+  await saveStore();
+}
+
+const removeChargeSchema = z.object({ assignmentId: z.string().min(1), chargeId: z.string().min(1) });
+
+/** Removes a charge added by mistake — only while nothing has been collected against that head. */
+export async function removeFeeCharge(fd: FormData): Promise<{ error?: string } | void> {
+  const user = await requireUser();
+  const perms = permissionsForRole(user.role);
+  if (!hasPermission(perms, PERMISSIONS.FEE_ADJUST)) return { error: "Not authorized" };
+  if (!user.instituteId) return { error: "Institute scope required" };
+
+  const parsed = removeChargeSchema.safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: "Invalid" };
+  const assn = store.feeAssignments.get(parsed.data.assignmentId);
+  if (!assn || assn.instituteId !== user.instituteId) return { error: "Assignment not found" };
+  if (assn.carriedForwardTo) return { error: "This year is closed (balance carried forward)" };
+  const charge = (assn.extraItems ?? []).find((e) => e.id === parsed.data.chargeId);
+  if (!charge) return { error: "Charge not found" };
+
+  const collected = assignmentPayments(assn.id)
+    .flatMap((p) => p.feeHeadBreakup ?? [])
+    .filter((h) => h.head === charge.head)
+    .reduce((sum, h) => sum + h.amount, 0);
+  if (collected > 0) {
+    return { error: `₹${collected.toLocaleString("en-IN")} was already collected for ${charge.head} — reverse those receipts first.` };
+  }
+  const newPayable = Math.max(0, assn.totalPayable - charge.amount);
+  if (assn.totalPaid > newPayable + (assn.previousBalance ?? 0)) {
+    return { error: "Already-collected amount would exceed the new payable" };
+  }
+
+  assn.extraItems = (assn.extraItems ?? []).filter((e) => e.id !== charge.id);
+  assn.totalPayable = newPayable;
+  assn.status = assignmentStatusFor(assn);
+  assn.updatedAt = new Date().toISOString();
+
+  pushAudit({
+    instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
+    action: "fee_charge.remove", entity: "FeeAssignment", entityId: assn.id,
+    meta: { chargeId: charge.id, head: charge.head, amount: charge.amount, studentId: assn.studentId },
   });
   await saveStore();
 }
@@ -288,7 +429,7 @@ export async function updateStructure(fd: FormData): Promise<{ error?: string } 
   for (const a of store.feeAssignments.values()) {
     if (a.feeStructureId !== fs.id) continue;
     a.academicYearId = fs.academicYearId;
-    a.totalPayable = Math.max(0, fs.totalAmount - a.discount);
+    a.totalPayable = Math.max(0, fs.totalAmount + extraChargesTotal(a) - a.discount);
     a.status = assignmentStatusFor(a);
     a.updatedAt = new Date().toISOString();
   }
@@ -381,7 +522,7 @@ export async function assignFees(fd: FormData): Promise<{ error?: string; create
         ? openPriorAssignments(s.id, fs.academicYearId).filter((p) => p.id !== assn.id)
         : [];
       const carriedNow = priors.reduce((sum, p) => sum + assignmentBalance(p), 0);
-      const newPayable = Math.max(0, fs.totalAmount - discount);
+      const newPayable = Math.max(0, fs.totalAmount + extraChargesTotal(assn) - discount);
       const newPrev = (assn.previousBalance ?? 0) + carriedNow;
       if (assn.totalPaid > newPayable + newPrev) {
         return { error: "Already-collected amount exceeds the new payable — reduce the discount." };
@@ -492,11 +633,11 @@ export async function updateAssignment(fd: FormData): Promise<{ error?: string }
     newItems = parseItems(parsed.data.items, 0).filter((i) => i.amount > 0);
     if (!newItems.length) return { error: "Add at least one fee head with an amount" };
   }
-  const feeTotal = fs
+  const feeTotal = (fs
     ? fs.totalAmount
     : newItems
       ? newItems.reduce((sum, i) => sum + i.amount, 0)
-      : assignmentFees(assn).totalAmount;
+      : baseFees(assn).totalAmount) + extraChargesTotal(assn);
   if (discount > feeTotal) return { error: "Discount cannot exceed the fee total" };
 
   const newPayable = Math.max(0, feeTotal - discount);
@@ -595,6 +736,14 @@ export async function setupStudentFees(fd: FormData): Promise<{ error?: string; 
     if (!ay || ay.instituteId !== user.instituteId) return { error: "Pick an academic year" };
     customItems = parseItems(parsed.data.items, 0).filter((i) => i.amount > 0);
     if (!customItems.length) return { error: "Add at least one fee head with an amount" };
+    const already = conditionalHeadsCharged(student.id, ay.id);
+    const seen = new Set<string>();
+    for (const i of customItems) {
+      const h = i.head.toLowerCase();
+      if (!CONDITIONAL_FEE_HEADS.some((c) => c.toLowerCase() === h)) continue;
+      if (already.has(h) || seen.has(h)) return { error: `${i.head} is already charged to this student for ${ay.name}` };
+      seen.add(h);
+    }
     customName = parsed.data.name?.trim() || `Fees ${ay.name}`;
     total = customItems.reduce((sum, i) => sum + i.amount, 0);
     academicYearId = ay.id;

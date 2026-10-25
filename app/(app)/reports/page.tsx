@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { assignmentYearId, scopeByInstitute, store } from "@/lib/db/store";
+import { assignmentYearId, scopeByInstitute, store, isActivePayment, assignmentBalance } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -78,7 +78,7 @@ export default async function ReportsPage({
     ? []
     : Array.from(store.institutes.values()).map((i) => ({ id: i.id, name: i.name }));
 
-  const payments = scopeByInstitute(store.feePayments.values(), scope);
+  const payments = scopeByInstitute(store.feePayments.values(), scope).filter(isActivePayment);
   const expenses = scopeByInstitute(store.expenses.values(), scope);
   const assignments = scopeByInstitute(store.feeAssignments.values(), scope);
   const txns = scopeByInstitute(store.transactions.values(), scope);
@@ -250,8 +250,10 @@ function StudentSummary({ assignments, showInstitute }: { assignments: Assignmen
 }
 
 function Pending({ assignments, showInstitute }: { assignments: Assignments; showInstitute: boolean }) {
+  // Carried-forward years show 0 here: their dues live on the newer year, and
+  // listing both would count the same money twice.
   const rows = assignments
-    .filter((a) => a.status !== "PAID")
+    .filter((a) => assignmentBalance(a) > 0)
     .map((a) => {
       const s = store.students.get(a.studentId);
       const cls = s ? store.classes.get(s.classId) : undefined;
@@ -261,7 +263,7 @@ function Pending({ assignments, showInstitute }: { assignments: Assignments; sho
         name: s?.name ?? "",
         adm: s?.admissionNo ?? "",
         cls: cls?.name ?? "",
-        balance: a.totalPayable - a.totalPaid,
+        balance: assignmentBalance(a),
         status: a.status,
       };
     })

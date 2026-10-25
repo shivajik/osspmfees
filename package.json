@@ -7,7 +7,8 @@
     "build": "next build",
     "build:dev": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --no-warnings --experimental-test-module-mocks --import ./scripts/register-alias.mjs --test \"lib/**/*.test.ts\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",

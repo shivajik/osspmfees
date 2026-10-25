@@ -2,7 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { store, studentLedger } from "@/lib/db/store";
+import { store, studentLedger, isActivePayment } from "@/lib/db/store";
+import { AddChargeButton, EditPaymentButton, RemoveChargeButton, ReversePaymentButton } from "../../_actions";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,11 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
 
   // Anything still collectable — the latest open year is what the counter defaults to.
   const canCollect = hasPermission(perms, PERMISSIONS.FEE_COLLECT) && !!user.instituteId;
+  const canAdjust = hasPermission(perms, PERMISSIONS.FEE_ADJUST) && !!user.instituteId;
+  const yearNameOf = (assignmentId: string) => rows.find((r) => r.assignment.id === assignmentId)?.yearName ?? "earlier year";
+  // Charges go on the latest year that is still open, even if it is fully paid.
+  const chargeTarget = [...rows].reverse().find((r) => !r.carriedForward);
+  const charges = rows.flatMap((r) => (r.assignment.extraItems ?? []).map((c) => ({ ...c, row: r })));
   const openRows = rows.filter((r) => !r.carriedForward && r.balance > 0);
   const collectTarget = openRows[openRows.length - 1];
 
@@ -87,7 +93,14 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
         columns={[
           { key: "year", header: "Academic year", render: (r) => <span className="font-medium">{r.yearName}</span> },
           { key: "fs", header: "Structure", render: (r) => r.structureName },
-          { key: "prev", header: "Previous balance", render: (r) => formatCurrency(r.previousBalance) },
+          { key: "prev", header: "Previous balance", render: (r) => (
+            <div>
+              <div>{formatCurrency(r.previousBalance)}</div>
+              {(r.assignment.carriedFrom?.length ?? 0) > 0 && (
+                <div className="text-xs text-[var(--color-fg-muted)]">from {r.assignment.carriedFrom!.map(yearNameOf).join(", ")}</div>
+              )}
+            </div>
+          ) },
           { key: "fees", header: "Year fees", render: (r) => formatCurrency(r.currentFees) },
           { key: "disc", header: "Discount", render: (r) => r.discount > 0 ? (
             <div>
@@ -117,6 +130,33 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
         ]}
       />
 
+      <div className="mt-8 mb-2 flex items-center justify-between">
+        <div className="text-sm font-medium">Additional charges</div>
+        {canAdjust && chargeTarget && (
+          <AddChargeButton assignmentId={chargeTarget.assignment.id} yearName={chargeTarget.yearName} />
+        )}
+      </div>
+      <DataTable
+        rowKey={(c) => c.id}
+        rows={charges}
+        empty="No conditional charges (e.g. TC fees) added for this student"
+        columns={[
+          { key: "year", header: "Academic year", render: (c) => c.row.yearName },
+          { key: "head", header: "Fee head", render: (c) => <span className="font-medium">{c.head}</span> },
+          { key: "reason", header: "Reason", render: (c) => c.reason ?? "—" },
+          { key: "by", header: "Added", render: (c) => (
+            <div className="text-xs">{formatDate(c.addedAt)}<div className="text-[var(--color-fg-muted)]">by {c.addedByName}</div></div>
+          ) },
+          { key: "amt", header: "Amount", render: (c) => <span className="font-semibold">{formatCurrency(c.amount)}</span> },
+          ...(canAdjust ? [{
+            key: "action", header: "",
+            render: (c: (typeof charges)[number]) => (c.row.carriedForward ? null : (
+              <div className="flex justify-end"><RemoveChargeButton assignmentId={c.row.assignment.id} chargeId={c.id} label={c.head} /></div>
+            )),
+          }] : []),
+        ]}
+      />
+
       <div className="mt-8 mb-2 text-sm font-medium">Payment history</div>
       <DataTable
         rowKey={(p) => p.id}
@@ -127,6 +167,12 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
             <Link href={`/fees/receipts/${p.id}`} className="font-medium text-[var(--color-brand)] hover:underline">{p.receiptNo}</Link>
           )},
           { key: "date", header: "Date", render: (p) => formatDate(p.paidAt) },
+          { key: "heads", header: "Fee heads", render: (p) => (
+            <div className="text-xs">
+              {(p.feeHeadBreakup ?? []).map((h) => <div key={h.head}>{h.head}: {formatCurrency(h.amount)}</div>)}
+              {(p.discount ?? 0) > 0 && <div className="text-sky-600">incl. discount {formatCurrency(p.discount ?? 0)}</div>}
+            </div>
+          ) },
           { key: "mode", header: "Mode", render: (p) => (
             <div>
               <Badge tone="neutral">{p.mode}</Badge>
@@ -135,7 +181,24 @@ export default async function StudentLedgerPage({ params }: { params: Promise<{ 
           )},
           { key: "prev", header: "To previous balance", render: (p) => formatCurrency(p.appliedToPrevious ?? 0) },
           { key: "cur", header: "To current year", render: (p) => formatCurrency(p.appliedToCurrent ?? p.amount) },
-          { key: "amt", header: "Amount", render: (p) => <span className="font-semibold">{formatCurrency(p.amount)}</span> },
+          { key: "amt", header: "Amount", render: (p) => isActivePayment(p)
+            ? <span className="font-semibold">{formatCurrency(p.amount)}</span>
+            : (
+              <div>
+                <span className="font-semibold line-through text-[var(--color-fg-muted)]">{formatCurrency(p.amount)}</span>
+                <div><Badge tone="danger">Reversed</Badge></div>
+                <div className="text-xs text-[var(--color-fg-muted)]">{p.voidReason} · {p.voidedByName}</div>
+              </div>
+            ) },
+          ...(canCollect ? [{
+            key: "action", header: "",
+            render: (p: (typeof payments)[number]) => (isActivePayment(p) ? (
+              <div className="flex justify-end gap-1">
+                <EditPaymentButton payment={{ id: p.id, receiptNo: p.receiptNo, amount: p.amount, mode: p.mode, reference: p.reference, cheque: p.cheque }} />
+                {canAdjust && <ReversePaymentButton payment={{ id: p.id, receiptNo: p.receiptNo, amount: p.amount, discount: p.discount }} />}
+              </div>
+            ) : null),
+          }] : []),
         ]}
       />
     </>
