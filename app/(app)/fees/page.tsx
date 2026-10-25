@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   AssignFeesButton, NewStructureButton,
-  EditAssignmentButton, EditStructureButton, EditPaymentButton,
+  EditAssignmentButton, EditStructureButton, EditPaymentButton, ReversePaymentButton,
 } from "./_actions";
 import Link from "next/link";
 import { CreditCard } from "lucide-react";
@@ -31,6 +31,7 @@ export default async function FeesPage({
   const params = parseListParams(sp, { filterKeys: scope ? ["status", "academicYearId"] : ["status", "academicYearId", "instituteId"] });
 
   const canCollect = hasPermission(perms, PERMISSIONS.FEE_COLLECT) && !!scope;
+  const canAdjust = hasPermission(perms, PERMISSIONS.FEE_ADJUST) && !!scope;
   const canWriteStructure = hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE) && !!scope;
 
   const allAssignments = scopeByInstitute(store.feeAssignments.values(), scope);
@@ -285,6 +286,9 @@ export default async function FeesPage({
                         <EditPaymentButton
                           payment={{ id: p.id, receiptNo: p.receiptNo, amount: p.amount, mode: p.mode, reference: p.reference, cheque: p.cheque }}
                         />
+                      )}
+                      {canAdjust && !p.voidedAt && (
+                        <ReversePaymentButton payment={{ id: p.id, receiptNo: p.receiptNo, amount: p.amount, discount: p.discount }} />
                       )}
                     </div>
                   </li>

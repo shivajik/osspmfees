@@ -6,6 +6,7 @@ import { store, assignmentBalance, grossPayable, assignmentFees } from "@/lib/db
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ArrowLeft, Download } from "lucide-react";
 import { PrintButton } from "./_print";
+import { ReversePaymentButton } from "../../_actions";
 
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,6 +40,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
           >
             <Download className="h-4 w-4" /> PDF
           </Link>
+          {hasPermission(permissionsForRole(user.role), PERMISSIONS.FEE_ADJUST) && user.instituteId && !p.voidedAt && (
+            <ReversePaymentButton payment={{ id: p.id, receiptNo: p.receiptNo, amount: p.amount, discount: p.discount }} />
+          )}
           <PrintButton />
         </div>
       </div>
