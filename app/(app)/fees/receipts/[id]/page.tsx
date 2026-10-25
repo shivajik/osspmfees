@@ -44,6 +44,12 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
       </div>
 
       <div className="card mx-auto max-w-3xl p-8">
+        {p.voidedAt && (
+          <div className="mb-6 rounded-md border-2 border-red-600 p-3 text-sm text-red-600">
+            <div className="font-bold uppercase tracking-wide">Reversed — not valid as proof of payment</div>
+            <div className="text-xs">On {formatDate(p.voidedAt)} by {p.voidedByName}: {p.voidReason}</div>
+          </div>
+        )}
         <div className="flex items-start justify-between border-b border-[var(--color-border)] pb-6">
           <div>
             <div className="text-lg font-bold tracking-tight">{institute?.name}</div>
@@ -54,6 +60,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
             <div className="text-xs uppercase tracking-widest text-[var(--color-fg-subtle)]">Fee Receipt</div>
             <div className="mt-1 font-mono text-lg font-semibold">{p.receiptNo}</div>
             <div className="text-xs text-[var(--color-fg-muted)]">{formatDate(p.paidAt)}</div>
+            {p.recordedAt && p.recordedAt.slice(0, 10) !== p.paidAt.slice(0, 10) && (
+              <div className="text-xs text-[var(--color-fg-subtle)]">Entered {formatDate(p.recordedAt)}</div>
+            )}
           </div>
         </div>
 
@@ -80,13 +89,15 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
             <tr><th className="px-3 py-2 text-left font-medium">Description</th><th className="px-3 py-2 text-right font-medium">Amount</th></tr>
           </thead>
           <tbody>
-            <tr className="border-t border-[var(--color-border)]">
-              <td className="px-3 py-3">
-                <div className="font-medium">{fees?.name ?? "Fee payment"}</div>
-                <div className="text-xs text-[var(--color-fg-muted)]">Assignment payment</div>
-              </td>
-              <td className="px-3 py-3 text-right font-semibold">{formatCurrency(p.amount)}</td>
-            </tr>
+            {(p.feeHeadBreakup?.length ? p.feeHeadBreakup : [{ head: fees?.name ?? "Fee payment", amount: p.amount }]).map((h) => (
+              <tr key={h.head} className="border-t border-[var(--color-border)]">
+                <td className="px-3 py-3">
+                  <div className="font-medium">{h.head}</div>
+                  <div className="text-xs text-[var(--color-fg-muted)]">{fees?.name}</div>
+                </td>
+                <td className="px-3 py-3 text-right font-semibold">{formatCurrency(h.amount)}</td>
+              </tr>
+            ))}
             {(p.discount ?? 0) > 0 && (
               <tr className="border-t border-[var(--color-border)]">
                 <td className="px-3 py-3">
@@ -96,7 +107,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
                     {p.discountByName ? ` · approved by ${p.discountByName}` : ""}
                   </div>
                 </td>
-                <td className="px-3 py-3 text-right font-semibold">{formatCurrency(p.discount ?? 0)}</td>
+                <td className="px-3 py-3 text-right font-semibold">− {formatCurrency(p.discount ?? 0)}</td>
               </tr>
             )}
             <tr className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)]">
@@ -114,6 +125,17 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
             )}
             <div>Paid to date: <span className="font-medium text-emerald-600">{formatCurrency(assn.totalPaid)}</span></div>
             <div>Balance: <span className="font-medium text-amber-600">{formatCurrency(assignmentBalance(assn))}</span></div>
+          </div>
+        )}
+
+        {(p.history?.length ?? 0) > 0 && (
+          <div className="no-print mt-6 rounded-md border border-[var(--color-border)] p-3 text-xs text-[var(--color-fg-muted)]">
+            <div className="mb-1 font-medium text-[var(--color-fg)]">Edit history</div>
+            {p.history!.map((h) => (
+              <div key={h.at}>
+                {formatDate(h.at)} · {h.byName} changed from {h.mode}{h.reference ? ` (ref ${h.reference})` : ""}{h.chequeNo ? ` (cheque #${h.chequeNo})` : ""}{h.reason ? ` — ${h.reason}` : ""}
+              </div>
+            ))}
           </div>
         )}
 

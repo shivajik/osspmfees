@@ -1,12 +1,15 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Plus, Trash2, Users } from "lucide-react";
+import { Pencil, Plus, Trash2, Undo2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
-import { createStructure, updateStructure, assignFees, updateAssignment, updatePayment } from "./actions";
-import { FEE_HEADS } from "@/lib/fee-heads";
+import {
+  createStructure, updateStructure, assignFees, updateAssignment, updatePayment,
+  reversePayment, addFeeCharge, removeFeeCharge,
+} from "./actions";
+import { CONDITIONAL_FEE_HEADS, FEE_HEADS } from "@/lib/fee-heads";
 import { withMinDelay } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -58,7 +61,7 @@ export function EditPaymentButton({
       <Modal
         open={open} onClose={() => setOpen(false)}
         title={`Edit receipt ${payment.receiptNo}`}
-        description="Balances and account ledgers are re-adjusted automatically."
+        description="Correct the mode or reference. To fix the amount, reverse this receipt and record a new one."
         footer={
           <>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
@@ -80,16 +83,154 @@ export function EditPaymentButton({
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
         >
           <input type="hidden" name="paymentId" value={payment.id} />
-          <Field label="Amount *"><Input name="amount" type="number" min="1" step="1" required defaultValue={payment.amount} /></Field>
+          <Field label="Amount" hint="Not editable"><Input type="text" readOnly disabled value={inr(payment.amount)} /></Field>
           <Field label="Mode *"><ModeSelect value={mode} onChange={setMode} /></Field>
           {mode === "CHEQUE" && <ChequeFields defaults={payment.cheque} />}
           <div className="sm:col-span-2">
             <Field label="Reference"><Input name="reference" maxLength={80} defaultValue={payment.reference ?? ""} /></Field>
           </div>
+          <div className="sm:col-span-2">
+            <Field label="Reason for change" hint="Kept in the receipt's edit history"><Input name="reason" maxLength={160} /></Field>
+          </div>
           {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
       </Modal>
     </>
+  );
+}
+
+export function ReversePaymentButton({ payment }: { payment: { id: string; receiptNo: string; amount: number; discount?: number } }) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  return (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => setOpen(true)}><Undo2 className="h-3.5 w-3.5" />Reverse</Button>
+      <Modal
+        open={open} onClose={() => setOpen(false)}
+        title={`Reverse receipt ${payment.receiptNo}?`}
+        description="The receipt stays on record marked as reversed. The student's balance goes back up and the money is debited from the account."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button form={`rev-pay-${payment.id}`} type="submit" variant="danger" disabled={pending} loading={pending}>Reverse receipt</Button>
+          </>
+        }
+      >
+        <form
+          id={`rev-pay-${payment.id}`}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            setPending(true); setError(null);
+            const r = await withMinDelay(reversePayment(fd));
+            setPending(false);
+            if (r?.error) return setError(r.error);
+            toast.success(`Receipt ${payment.receiptNo} reversed`);
+            setOpen(false); router.refresh();
+          }}
+          className="grid gap-3"
+        >
+          <input type="hidden" name="paymentId" value={payment.id} />
+          <p className="text-sm">
+            Amount: <span className="font-semibold">{inr(payment.amount)}</span>
+            {(payment.discount ?? 0) > 0 && <> · discount {inr(payment.discount ?? 0)}</>}
+          </p>
+          <Field label="Reason *"><Input name="reason" required minLength={3} maxLength={160} placeholder="Wrong amount entered / cheque bounced" /></Field>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </form>
+      </Modal>
+    </>
+  );
+}
+
+/** Adds a conditional fee (e.g. TC fees) to one student's year. */
+export function AddChargeButton({ assignmentId, yearName }: { assignmentId: string; yearName: string }) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [head, setHead] = useState<string>(CONDITIONAL_FEE_HEADS[0]);
+  const [customHead, setCustomHead] = useState("");
+  const router = useRouter();
+  const isCustom = head === "__custom";
+  return (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => setOpen(true)}><Plus className="h-3.5 w-3.5" />Add charge</Button>
+      <Modal
+        open={open} onClose={() => setOpen(false)}
+        title={`Add a charge — ${yearName}`}
+        description="For fees that apply only to this student, e.g. TC fees when a Transfer Certificate is requested."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button form={`add-chg-${assignmentId}`} type="submit" disabled={pending} loading={pending}>Add charge</Button>
+          </>
+        }
+      >
+        <form
+          id={`add-chg-${assignmentId}`}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            fd.set("head", isCustom ? customHead.trim() : head);
+            setPending(true); setError(null);
+            const r = await withMinDelay(addFeeCharge(fd));
+            setPending(false);
+            if (r?.error) return setError(r.error);
+            toast.success("Charge added");
+            setOpen(false); router.refresh();
+          }}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        >
+          <input type="hidden" name="assignmentId" value={assignmentId} />
+          <Field label="Fee head *">
+            <Select value={head} onChange={(e) => setHead(e.target.value)}>
+              {FEE_HEADS.map((h) => <option key={h} value={h}>{h}</option>)}
+              <option value="__custom">Other (type below)</option>
+            </Select>
+          </Field>
+          <Field label="Amount (₹) *"><Input name="amount" type="number" min="1" step="1" required /></Field>
+          {isCustom && (
+            <div className="sm:col-span-2">
+              <Field label="Custom head name *">
+                <Input value={customHead} onChange={(e) => setCustomHead(e.target.value)} required minLength={2} maxLength={60} />
+              </Field>
+            </div>
+          )}
+          <div className="sm:col-span-2">
+            <Field label={isCustom ? "Reason *" : "Reason"} hint="e.g. TC requested on 12 Oct">
+              <Input name="reason" maxLength={160} required={isCustom} />
+            </Field>
+          </div>
+          {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
+        </form>
+      </Modal>
+    </>
+  );
+}
+
+export function RemoveChargeButton({ assignmentId, chargeId, label }: { assignmentId: string; chargeId: string; label: string }) {
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
+  return (
+    <Button
+      size="sm" variant="ghost" disabled={pending} loading={pending} aria-label={`Remove ${label}`}
+      onClick={async () => {
+        if (!confirm(`Remove ${label}? Only possible while nothing has been collected for it.`)) return;
+        const fd = new FormData();
+        fd.set("assignmentId", assignmentId);
+        fd.set("chargeId", chargeId);
+        setPending(true);
+        const r = await withMinDelay(removeFeeCharge(fd));
+        setPending(false);
+        if (r?.error) return toast.error(r.error);
+        toast.success(`${label} removed`);
+        router.refresh();
+      }}
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+    </Button>
   );
 }
 

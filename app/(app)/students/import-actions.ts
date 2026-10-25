@@ -1,7 +1,7 @@
 "use server";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { pushAudit, store, assignmentStatusFor } from "@/lib/db/store";
+import { pushAudit, store, assignmentStatusFor, extraChargesTotal } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
 import { saveStore } from "@/lib/db/persistence";
 import { parseStudentWorkbook } from "@/lib/import/students";
@@ -196,14 +196,17 @@ export async function importStudents(fd: FormData): Promise<ImportSummary> {
       (a) => a.studentId === student!.id && (a.academicYearId ?? "") === academicYearId,
     );
     if (assn) {
-      if (assn.totalPaid > payable + previousBalance) {
+      // Conditional charges added to the student (e.g. TC fees) are not part of
+      // the sheet and must survive a re-import.
+      const payableWithExtras = payable + extraChargesTotal(assn);
+      if (assn.totalPaid > payableWithExtras + previousBalance) {
         errors.push(`${r.name} (${r.admissionNo}): collected amount exceeds imported fees — fee row skipped.`);
         continue;
       }
       assn.feeStructureId = structure.id;
       assn.discount = r.discount;
       assn.previousBalance = previousBalance;
-      assn.totalPayable = payable;
+      assn.totalPayable = payableWithExtras;
       assn.discountByName = assn.discount > 0 ? (assn.discountByName ?? user.name) : undefined;
       assn.discountReason = assn.discount > 0 ? (assn.discountReason ?? "Imported from spreadsheet") : undefined;
       assn.status = assignmentStatusFor(assn);

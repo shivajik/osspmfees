@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { store, assignmentFees } from "@/lib/db/store";
+import { store, assignmentFees, grossPayable, assignmentBalance } from "@/lib/db/store";
 import { renderReceiptPdf } from "@/lib/export/pdf";
 
 export const runtime = "nodejs";
@@ -52,10 +52,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     },
     structureName: fees?.name,
     totals: assn ? {
-      payable: assn.totalPayable,
+      payable: grossPayable(assn),
       paid: assn.totalPaid,
-      balance: assn.totalPayable - assn.totalPaid,
+      balance: assignmentBalance(assn),
     } : undefined,
+    reversed: p.voidedAt ? { at: p.voidedAt, by: p.voidedByName ?? "", reason: p.voidReason ?? "" } : undefined,
+    breakup: p.feeHeadBreakup,
+    discount: p.discount,
     currency: "\u20B9 ",
   });
 

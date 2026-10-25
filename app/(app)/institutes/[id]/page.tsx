@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Building2, GraduationCap, Landmark, ReceiptText, TrendingUp, Users, Wallet, AlertTriangle } from "lucide-react";
 import { requireUser } from "@/lib/auth/session";
 import { ROLES } from "@/lib/auth/rbac";
-import { store, scopeByInstitute, grossPayable, assignmentBalance } from "@/lib/db/store";
+import { store, scopeByInstitute, grossPayable, assignmentBalance, isActivePayment } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -25,7 +25,7 @@ export default async function InstituteDetailPage({ params }: { params: Promise<
   const classes = scopeByInstitute(store.classes.values(), id);
   const years = scopeByInstitute(store.academicYears.values(), id);
   const activeYear = years.find((y) => y.isActive);
-  const payments = scopeByInstitute(store.feePayments.values(), id);
+  const payments = scopeByInstitute(store.feePayments.values(), id).filter(isActivePayment);
   const expenses = scopeByInstitute(store.expenses.values(), id);
   const assignments = scopeByInstitute(store.feeAssignments.values(), id);
   const accounts = scopeByInstitute(store.accounts.values(), id);

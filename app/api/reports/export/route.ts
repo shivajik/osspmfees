@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { assignmentYearId, scopeByInstitute, store } from "@/lib/db/store";
+import { assignmentYearId, scopeByInstitute, store, isActivePayment, assignmentBalance } from "@/lib/db/store";
 import { renderTablePdf } from "@/lib/export/pdf";
 import { renderXlsx } from "@/lib/export/xlsx";
 
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
   if (tab === "daily" || tab === "monthly") {
     const key = tab === "daily" ? 10 : 7;
     const map = new Map<string, { period: string; instituteId: string; count: number; total: number; by: Set<string> }>();
-    scopeByInstitute(store.feePayments.values(), scope).forEach((p) => {
+    scopeByInstitute(store.feePayments.values(), scope).filter(isActivePayment).forEach((p) => {
       const period = p.paidAt.slice(0, key);
       const k = showInstitute ? `${period}|${p.instituteId}` : period;
       const cur = map.get(k) ?? { period, instituteId: p.instituteId, count: 0, total: 0, by: new Set<string>() };
@@ -89,14 +89,14 @@ export async function GET(req: Request) {
     });
   } else if (tab === "pending") {
     rows = [["Admission", "Student", "Class", "Balance", "Status"]];
-    scopeByInstitute(store.feeAssignments.values(), scope).filter((a) => a.status !== "PAID").forEach((a) => {
+    scopeByInstitute(store.feeAssignments.values(), scope).filter((a) => assignmentBalance(a) > 0).forEach((a) => {
       const s = store.students.get(a.studentId);
       const cls = s ? store.classes.get(s.classId)?.name ?? "" : "";
-      rows.push([s?.admissionNo ?? "", s?.name ?? "", cls, a.totalPayable - a.totalPaid, a.status]);
+      rows.push([s?.admissionNo ?? "", s?.name ?? "", cls, assignmentBalance(a), a.status]);
     });
   } else if (tab === "discount") {
     const counter = new Map<string, { amount: number; by: Set<string>; reasons: Set<string> }>();
-    scopeByInstitute(store.feePayments.values(), scope).forEach((p) => {
+    scopeByInstitute(store.feePayments.values(), scope).filter(isActivePayment).forEach((p) => {
       if (!p.discount) return;
       const cur = counter.get(p.assignmentId) ?? { amount: 0, by: new Set<string>(), reasons: new Set<string>() };
       cur.amount += p.discount;

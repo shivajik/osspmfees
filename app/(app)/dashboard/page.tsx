@@ -4,7 +4,7 @@ import { StatCard } from "@/components/stat-card";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CollectionChart } from "@/components/collection-chart";
-import { store, scopeByInstitute } from "@/lib/db/store";
+import { store, scopeByInstitute, isActivePayment, assignmentBalance } from "@/lib/db/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Wallet, ReceiptText, GraduationCap, Landmark, Building2, TrendingUp, AlertTriangle, Users } from "lucide-react";
 
@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   const students = scopeByInstitute(store.students.values(), scope);
   const institutes = Array.from(store.institutes.values());
   const audits = store.auditLogs.slice(0, 8);
-  const payments = scopeByInstitute(store.feePayments.values(), scope);
+  const payments = scopeByInstitute(store.feePayments.values(), scope).filter(isActivePayment);
   const expenses = scopeByInstitute(store.expenses.values(), scope);
   const assignments = scopeByInstitute(store.feeAssignments.values(), scope);
   const accounts = scopeByInstitute(store.accounts.values(), scope);
@@ -24,8 +24,8 @@ export default async function DashboardPage() {
   const todayCollection = payments.filter((p) => p.paidAt.slice(0, 10) === today).reduce((s, p) => s + p.amount, 0);
   const monthlyCollection = payments.filter((p) => p.paidAt.slice(0, 7) === monthKey).reduce((s, p) => s + p.amount, 0);
   const todayExpense = expenses.filter((e) => e.spentAt.slice(0, 10) === today).reduce((s, e) => s + e.amount, 0);
-  const pending = assignments.reduce((s, a) => s + (a.totalPayable - a.totalPaid), 0);
-  const pendingStudents = new Set(assignments.filter((a) => a.status !== "PAID").map((a) => a.studentId)).size;
+  const pending = assignments.reduce((s, a) => s + assignmentBalance(a), 0);
+  const pendingStudents = new Set(assignments.filter((a) => assignmentBalance(a) > 0).map((a) => a.studentId)).size;
   const bankBal = accounts.filter((a) => a.type === "BANK").reduce((s, a) => s + a.currentBal, 0);
   const cashBal = accounts.filter((a) => a.type === "CASH").reduce((s, a) => s + a.currentBal, 0);
 

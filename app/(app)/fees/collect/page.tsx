@@ -250,7 +250,9 @@ export default async function CollectCounterPage({
                           <div className={`text-sm font-semibold ${balance > 0 ? "text-amber-600" : "text-emerald-600"}`}>
                             {formatCurrency(balance)}
                           </div>
-                          <Badge tone={a.status === "PAID" ? "success" : a.status === "PARTIAL" ? "info" : "warning"}>{a.status}</Badge>
+                          {a.carriedForwardTo
+                            ? <Badge tone="neutral">CARRIED FORWARD</Badge>
+                            : <Badge tone={a.status === "PAID" ? "success" : a.status === "PARTIAL" ? "info" : "warning"}>{a.status}</Badge>}
                         </div>
                         {balance > 0 && (
                           <Link
@@ -313,9 +315,9 @@ export default async function CollectCounterPage({
                       <Link href={`/fees/receipts/${p.id}`} className="font-medium text-[var(--color-brand)] hover:underline">
                         {p.receiptNo}
                       </Link>
-                      <div className="text-xs text-[var(--color-fg-muted)]">{formatDate(p.paidAt)} · {p.mode}</div>
+                      <div className="text-xs text-[var(--color-fg-muted)]">{formatDate(p.paidAt)} · {p.mode}{p.voidedAt ? " · reversed" : ""}</div>
                     </div>
-                    <span className="font-semibold">{formatCurrency(p.amount)}</span>
+                    <span className={p.voidedAt ? "font-semibold line-through text-[var(--color-fg-muted)]" : "font-semibold"}>{formatCurrency(p.amount)}</span>
                   </li>
                 ))}
               </ul>

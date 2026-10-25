@@ -5,6 +5,8 @@
 import { hashSync } from "bcryptjs";
 import { uid } from "@/lib/utils";
 import { ROLES, type Role } from "@/lib/auth/rbac";
+import { headOutstanding, PREVIOUS_BALANCE_HEAD, type HeadAmount } from "@/lib/fees/rules";
+import { CONDITIONAL_FEE_HEADS } from "@/lib/fee-heads";
 
 export interface Institute {
   id: string;
@@ -69,6 +71,11 @@ export interface FeeAssignment {
    */
   customName?: string;
   customItems?: { head: string; amount: number }[];
+  /**
+   * Conditional charges added to this one student on top of the structure or
+   * custom heads — e.g. TC fees once a Transfer Certificate is requested.
+   */
+  extraItems?: FeeCharge[];
   /** Denormalised for year-wise ledgers (copied from the fee structure). */
   academicYearId?: string;
   discount: number;
@@ -84,6 +91,10 @@ export interface FeeAssignment {
   /** Total concessions granted at the collection counter (part of totalPaid). */
   collectionDiscount?: number;
   status: "PENDING" | "PARTIAL" | "PAID"; createdAt: string; updatedAt?: string;
+}
+export interface FeeCharge {
+  id: string; head: string; amount: number; reason?: string;
+  addedAt: string; addedBy: string; addedByName: string;
 }
 export type PaymentMode = "CASH" | "BANK" | "CARD" | "UPI" | "CHEQUE" | "ONLINE";
 export interface ChequeDetails {
@@ -104,6 +115,12 @@ export interface FeePayment {
   cheque?: ChequeDetails;
   reference?: string; paidAt: string; createdBy: string; createdByName: string;
   updatedAt?: string; updatedBy?: string; updatedByName?: string;
+  /** When the receipt was keyed in; `paidAt` is when the money was received. */
+  recordedAt?: string;
+  /** Prior values of every edit, oldest first — receipts are never silently changed. */
+  history?: { at: string; by: string; byName: string; mode: PaymentMode; reference?: string; chequeNo?: string; reason?: string }[];
+  /** Set when the receipt was reversed. A reversed receipt no longer counts toward any total. */
+  voidedAt?: string; voidedBy?: string; voidedByName?: string; voidReason?: string;
 }
 
 export interface ExpenseCategory {
@@ -341,16 +358,62 @@ export interface AssignmentFees {
  * structure, or the per-student heads captured at the counter.
  */
 export function assignmentFees(a: FeeAssignment): AssignmentFees {
+  const base = baseFees(a);
+  const extras = (a.extraItems ?? []).map((e) => ({ head: e.head, amount: e.amount }));
+  return {
+    ...base,
+    totalAmount: base.totalAmount + extraChargesTotal(a),
+    items: [...base.items, ...extras],
+  };
+}
+
+/** Structure or per-student heads only — conditional extra charges excluded. */
+export function baseFees(a: FeeAssignment): AssignmentFees {
   const fs = store.feeStructures.get(a.feeStructureId);
   if (fs) return { name: fs.name, totalAmount: fs.totalAmount, items: fs.items, custom: false };
   const items = a.customItems ?? [];
   return {
     name: a.customName || "Custom fees",
     // Fall back to the stored payable for assignments written before heads existed.
-    totalAmount: items.length ? items.reduce((sum, i) => sum + i.amount, 0) : a.totalPayable + a.discount,
+    totalAmount: items.length
+      ? items.reduce((sum, i) => sum + i.amount, 0)
+      : a.totalPayable + a.discount - extraChargesTotal(a),
     items,
     custom: true,
   };
+}
+
+export function extraChargesTotal(a: FeeAssignment): number {
+  return (a.extraItems ?? []).reduce((sum, e) => sum + e.amount, 0);
+}
+
+/** Reversed receipts stay on record for audit but never count toward totals. */
+export function isActivePayment(p: FeePayment): boolean {
+  return !p.voidedAt;
+}
+
+/** Active payments on an assignment. */
+export function assignmentPayments(assignmentId: string): FeePayment[] {
+  return Array.from(store.feePayments.values()).filter((p) => p.assignmentId === assignmentId && isActivePayment(p));
+}
+
+/** Carried-forward dues on an assignment that are still unpaid. */
+export function previousDue(a: FeeAssignment): number {
+  return Math.max(0, (a.previousBalance ?? 0) - a.totalPaid);
+}
+
+/** Per-head amounts still owed, previous-year balance first. */
+export function assignmentHeadOutstanding(a: FeeAssignment): HeadAmount[] {
+  const fees = assignmentFees(a);
+  // A structure total can exceed its listed heads (or a legacy assignment may
+  // have none); expose the remainder so the full balance stays collectable.
+  const residual = fees.totalAmount - fees.items.reduce((sum, i) => sum + i.amount, 0);
+  const charged = residual > 0 ? [...fees.items, { head: "Other fees", amount: residual }] : fees.items;
+  return headOutstanding(
+    charged,
+    assignmentPayments(a.id).map((p) => (p.feeHeadBreakup ?? []).filter((h) => h.head !== PREVIOUS_BALANCE_HEAD)),
+    previousDue(a),
+  );
 }
 
 /** Academic year of an assignment, falling back to its fee structure. */
@@ -395,6 +458,24 @@ export interface LedgerRow {
 }
 
 /** Year-wise fee ledger for a student, oldest year first. */
+/**
+ * Conditional heads (TC, board, eligibility) already charged to a student in an
+ * academic year, across every assignment — structure, custom and extra charges.
+ * Lower-cased for comparison.
+ */
+export function conditionalHeadsCharged(studentId: string, yearId: string): Set<string> {
+  const conditional = new Set(CONDITIONAL_FEE_HEADS.map((h) => h.toLowerCase()));
+  const out = new Set<string>();
+  for (const a of store.feeAssignments.values()) {
+    if (a.studentId !== studentId || assignmentYearId(a) !== yearId) continue;
+    for (const i of assignmentFees(a).items) {
+      const h = i.head.toLowerCase();
+      if (conditional.has(h)) out.add(h);
+    }
+  }
+  return out;
+}
+
 export function studentLedger(studentId: string): LedgerRow[] {
   return Array.from(store.feeAssignments.values())
     .filter((a) => a.studentId === studentId)

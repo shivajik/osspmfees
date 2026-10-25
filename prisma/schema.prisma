@@ -233,6 +233,10 @@ model FeeAssignment {
   totalPayable   Decimal  @db.Decimal(12, 2)
   totalPaid      Decimal  @db.Decimal(12, 2) @default(0)
   status         PaymentStatus @default(PENDING)
+  academicYearId String?
+  previousBalance Decimal @db.Decimal(12, 2) @default(0)
+  /// Conditional charges (e.g. TC fees) added to this student: [{id, head, amount, reason, addedAt, addedByName}]
+  extraCharges   Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -256,9 +260,18 @@ model FeePayment {
   accountId      String?
   account        Account? @relation(fields: [accountId], references: [id])
   reference      String?
+  feeHeadBreakup Json?
+  appliedToPrevious Decimal @db.Decimal(12, 2) @default(0)
+  appliedToCurrent  Decimal @db.Decimal(12, 2) @default(0)
+  discount       Decimal  @db.Decimal(12, 2) @default(0)
   paidAt         DateTime @default(now())
   createdAt      DateTime @default(now())
   createdBy      String?
+  /// Reversed receipts stay on record; exclude rows with voidedAt from totals.
+  voidedAt       DateTime?
+  voidedBy       String?
+  voidReason     String?
+  history        Json?
 
   transaction    Transaction?
 

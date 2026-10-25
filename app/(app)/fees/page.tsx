@@ -271,16 +271,17 @@ export default async function FeesPage({
                       <div className="text-xs text-[var(--color-fg-muted)]">
                         {s?.name} · {p.mode}{p.cheque ? ` · cheque #${p.cheque.chequeNo}` : ""}
                       </div>
+                      {p.voidedAt && <div className="text-xs font-medium text-red-600">Reversed · {p.voidReason}</div>}
                       {(p.appliedToPrevious ?? 0) > 0 && (
                         <div className="text-xs text-orange-600">{formatCurrency(p.appliedToPrevious ?? 0)} adjusted to previous balance</div>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="text-right">
-                        <div className="font-semibold">{formatCurrency(p.amount)}</div>
+                        <div className={p.voidedAt ? "font-semibold line-through text-[var(--color-fg-muted)]" : "font-semibold"}>{formatCurrency(p.amount)}</div>
                         <div className="text-xs text-[var(--color-fg-subtle)]">{formatDate(p.paidAt)}</div>
                       </div>
-                      {canCollect && (
+                      {canCollect && !p.voidedAt && (
                         <EditPaymentButton
                           payment={{ id: p.id, receiptNo: p.receiptNo, amount: p.amount, mode: p.mode, reference: p.reference, cheque: p.cheque }}
                         />
