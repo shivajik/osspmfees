@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  PREVIOUS_BALANCE_HEAD, autoAllocate, headOutstanding, mergeHeads,
+  PREVIOUS_BALANCE_HEAD, autoAllocate, duplicateHead, headOutstanding, mergeHeads,
   parsePaymentDate, splitSettlement, validateAllocation,
 } from "./rules.ts";
 
@@ -82,4 +82,9 @@ test("parsePaymentDate handles blank, today, backdated, future and malformed inp
   assert.match(parsePaymentDate("2024-01-01", now).error ?? "", /days old/);
   assert.match(parsePaymentDate("2026-02-30", now).error ?? "", /Invalid/);
   assert.match(parsePaymentDate("24/10/2026", now).error ?? "", /Invalid/);
+});
+
+test("duplicateHead ignores case and extra spaces", () => {
+  assert.equal(duplicateHead([{ head: "Admission fee" }, { head: "Tuition fee" }]), null);
+  assert.equal(duplicateHead([{ head: "Admission fee" }, { head: " admission  FEE " }]), "admission  FEE");
 });

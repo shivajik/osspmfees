@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { scopeByInstitute, store, assignmentBalance, grossPayable, assignmentFees } from "@/lib/db/store";
+import { scopeByInstitute, store, assignmentBalance, grossPayable, assignmentFees, openPriorAssignments } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +78,12 @@ export default async function CollectCounterPage({
     : [];
 
   const step = selectedStudent ? 3 : selectedClass ? 2 : 1;
+
+  // Old dues the simple fee form shows will be added on top.
+  const activeYearId = yearOptions.find((y) => y.isActive)?.id ?? "";
+  const previousDueForNew = selectedStudent && activeYearId
+    ? openPriorAssignments(selectedStudent.id, activeYearId).reduce((sum, a) => sum + assignmentBalance(a), 0)
+    : 0;
 
   return (
     <>
@@ -225,6 +231,7 @@ export default async function CollectCounterPage({
                   student={{ id: selectedStudent.id, name: selectedStudent.name }}
                   structures={structureOptions}
                   years={yearOptions}
+                  previousDue={previousDueForNew}
                 />
               ) : (
                 <p className="text-sm text-[var(--color-fg-muted)]">

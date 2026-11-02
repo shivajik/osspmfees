@@ -8,7 +8,7 @@ import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
-  AssignFeesButton, NewStructureButton,
+  AssignFeesButton, NewStructureButton, SetStudentFeeButton,
   EditAssignmentButton, EditStructureButton, EditPaymentButton, ReversePaymentButton,
 } from "./_actions";
 import Link from "next/link";
@@ -88,7 +88,10 @@ export default async function FeesPage({
         title="Fee collection"
         description="Year-wise fees assigned to students, with carried-forward previous balances, discounts and receipts."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {canWriteStructure && scope && (
+              <SetStudentFeeButton students={studentOptions} years={yearOptions} />
+            )}
             {canWriteStructure && (
               <AssignFeesButton
                 structures={structureOptions}
@@ -127,19 +130,15 @@ export default async function FeesPage({
 
       {allAssignments.length === 0 && (
         <Card className="mb-6">
-          <CardHeader><div><CardTitle>How fee collection works</CardTitle><CardDescription>Three steps before you can collect a payment</CardDescription></div></CardHeader>
+          <CardHeader><div><CardTitle>How fee collection works</CardTitle><CardDescription>Two steps — no fee structure needed</CardDescription></div></CardHeader>
           <ol className="list-decimal space-y-1 pl-5 text-sm text-[var(--color-fg-muted)]">
-            <li><span className="font-medium text-[var(--color-fg)]">Create a fee structure</span> for a class + academic year (Institute Admin).</li>
-            <li><span className="font-medium text-[var(--color-fg)]">Assign fees</span> to students — unpaid dues from earlier years are carried forward automatically.</li>
-            <li><span className="font-medium text-[var(--color-fg)]">Collect</span> full or partial payments from the “Fees assigned to students” table below.</li>
+            <li><span className="font-medium text-[var(--color-fg)]">Set fee for a student</span> — type what they pay for the year, and anything already paid.</li>
+            <li><span className="font-medium text-[var(--color-fg)]">Collect</span> the rest whenever they pay, from the table below or “Collect fees”.</li>
           </ol>
-          {canWriteStructure && (
+          <p className="mt-2 text-xs text-[var(--color-fg-subtle)]">Same fee for a whole class? Use “Fee structure” and “Assign fees” instead.</p>
+          {canWriteStructure && scope && (
             <div className="mt-4">
-              <AssignFeesButton
-                label="Step 2 — Assign fees to students"
-                structures={structureOptions}
-                students={studentOptions}
-              />
+              <SetStudentFeeButton students={studentOptions} years={yearOptions} />
             </div>
           )}
         </Card>

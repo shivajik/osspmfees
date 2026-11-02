@@ -16,6 +16,20 @@ export function sumAmounts(items: readonly HeadAmount[]): number {
   return items.reduce((s, i) => s + i.amount, 0);
 }
 
+/**
+ * First head that appears more than once (case/space-insensitive), or null.
+ * A head listed twice would be charged twice, so every fee form rejects it.
+ */
+export function duplicateHead(items: readonly { head: string }[]): string | null {
+  const seen = new Set<string>();
+  for (const i of items) {
+    const key = i.head.trim().replace(/\s+/g, " ").toLowerCase();
+    if (seen.has(key)) return i.head.trim();
+    seen.add(key);
+  }
+  return null;
+}
+
 /** Merges duplicate head names so a head charged twice reads as one line. */
 export function mergeHeads(items: readonly HeadAmount[]): HeadAmount[] {
   const map = new Map<string, number>();

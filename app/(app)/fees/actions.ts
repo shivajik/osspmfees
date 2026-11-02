@@ -8,7 +8,7 @@ import {
   baseFees, extraChargesTotal, conditionalHeadsCharged, assignmentHeadOutstanding, assignmentPayments, isActivePayment,
   type ChequeDetails,
 } from "@/lib/db/store";
-import { parsePaymentDate, splitSettlement, validateAllocation } from "@/lib/fees/rules";
+import { autoAllocate, duplicateHead, parsePaymentDate, splitSettlement, validateAllocation } from "@/lib/fees/rules";
 import { CONDITIONAL_FEE_HEADS, FEE_HEADS } from "@/lib/fee-heads";
 import { uid } from "@/lib/utils";
 import { saveStore } from "@/lib/db/persistence";
@@ -370,6 +370,8 @@ function parseItems(raw: string | undefined, total: number) {
   return items.length ? items : [{ head: "Tuition", amount: total }];
 }
 
+const duplicateError = (head: string) => `${head} is added twice — keep it once and put the full amount there`;
+
 export async function createStructure(fd: FormData): Promise<{ error?: string } | void> {
   const user = await requireUser();
   const perms = permissionsForRole(user.role);
@@ -384,12 +386,17 @@ export async function createStructure(fd: FormData): Promise<{ error?: string } 
   if (!cls || cls.instituteId !== user.instituteId) return { error: "Invalid class" };
   if (!ay || ay.instituteId !== user.instituteId) return { error: "Invalid year" };
 
+  const items = parseItems(parsed.data.items, parsed.data.totalAmount).filter((i) => i.amount > 0);
+  const dup = duplicateHead(items);
+  if (dup) return { error: duplicateError(dup) };
+  if (!items.length) return { error: "Add at least one fee head with an amount" };
+
   const id = uid("fs");
   store.feeStructures.set(id, {
     id, instituteId: user.instituteId,
     academicYearId: parsed.data.academicYearId, classId: parsed.data.classId,
-    name: parsed.data.name, totalAmount: parsed.data.totalAmount,
-    items: parseItems(parsed.data.items, parsed.data.totalAmount),
+    name: parsed.data.name, totalAmount: items.reduce((sum, i) => sum + i.amount, 0),
+    items,
     createdAt: new Date().toISOString(),
   });
 
@@ -419,11 +426,16 @@ export async function updateStructure(fd: FormData): Promise<{ error?: string } 
   if (!cls || cls.instituteId !== user.instituteId) return { error: "Invalid class" };
   if (!ay || ay.instituteId !== user.instituteId) return { error: "Invalid year" };
 
+  const items = parseItems(parsed.data.items, parsed.data.totalAmount).filter((i) => i.amount > 0);
+  const dup = duplicateHead(items);
+  if (dup) return { error: duplicateError(dup) };
+  if (!items.length) return { error: "Add at least one fee head with an amount" };
+
   fs.name = parsed.data.name;
-  fs.totalAmount = parsed.data.totalAmount;
+  fs.totalAmount = items.reduce((sum, i) => sum + i.amount, 0);
   fs.classId = parsed.data.classId;
   fs.academicYearId = parsed.data.academicYearId;
-  fs.items = parseItems(parsed.data.items, parsed.data.totalAmount);
+  fs.items = items;
 
   // Keep assignments in sync: payable = structure total − student discount.
   for (const a of store.feeAssignments.values()) {
@@ -632,6 +644,8 @@ export async function updateAssignment(fd: FormData): Promise<{ error?: string }
   if (keepCustom && parsed.data.items) {
     newItems = parseItems(parsed.data.items, 0).filter((i) => i.amount > 0);
     if (!newItems.length) return { error: "Add at least one fee head with an amount" };
+    const dup = duplicateHead(newItems);
+    if (dup) return { error: duplicateError(dup) };
   }
   const feeTotal = (fs
     ? fs.totalAmount
@@ -736,6 +750,8 @@ export async function setupStudentFees(fd: FormData): Promise<{ error?: string; 
     if (!ay || ay.instituteId !== user.instituteId) return { error: "Pick an academic year" };
     customItems = parseItems(parsed.data.items, 0).filter((i) => i.amount > 0);
     if (!customItems.length) return { error: "Add at least one fee head with an amount" };
+    const dup = duplicateHead(customItems);
+    if (dup) return { error: duplicateError(dup) };
     const already = conditionalHeadsCharged(student.id, ay.id);
     const seen = new Set<string>();
     for (const i of customItems) {
@@ -786,4 +802,83 @@ export async function setupStudentFees(fd: FormData): Promise<{ error?: string; 
   });
   await saveStore();
   return { assignmentId: aid };
+}
+
+// ---------------------------------------------------------------------------
+// One-amount fee for a student (no fee structure needed)
+// ---------------------------------------------------------------------------
+
+const setFeeSchema = z.object({
+  studentId: z.string().min(1),
+  /** Blank = the institute's current academic year. */
+  academicYearId: z.string().optional().or(z.literal("")),
+  /** Fee heads as "Head:amount, Head:amount". */
+  items: z.string().max(2000).optional().or(z.literal("")),
+  /** Single amount, used when no heads are sent. */
+  amount: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+  /** Money the student has already handed over (e.g. at admission). */
+  paid: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+  mode: z.enum(["CASH", "BANK", "CARD", "UPI", "CHEQUE", "ONLINE"]).optional().default("CASH"),
+});
+
+/**
+ * Sets a student's fee for the year as a single amount — what village schools
+ * actually do — and optionally records what they have already paid, with a
+ * proper receipt so the cash book and balance stay right.
+ */
+export async function setStudentFee(fd: FormData): Promise<{ error?: string; assignmentId?: string; paymentId?: string }> {
+  const user = await requireUser();
+  const perms = permissionsForRole(user.role);
+  if (!hasPermission(perms, PERMISSIONS.FEE_STRUCTURE_WRITE)) return { error: "Not authorized" };
+  if (!user.instituteId) return { error: "Institute scope required" };
+
+  const parsed = setFeeSchema.safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const { studentId, paid, mode } = parsed.data;
+  const heads = parsed.data.items
+    ? parseItems(parsed.data.items, 0).filter((i) => i.amount > 0)
+    : parsed.data.amount > 0 ? [{ head: "Tuition fee", amount: parsed.data.amount }] : [];
+  if (!heads.length) return { error: "Enter the fee for this student" };
+  const dup = duplicateHead(heads);
+  if (dup) return { error: duplicateError(dup) };
+  const amount = heads.reduce((sum, i) => sum + i.amount, 0);
+
+  const student = store.students.get(studentId);
+  if (!student || student.instituteId !== user.instituteId) return { error: "Student not found" };
+  const year = parsed.data.academicYearId
+    ? store.academicYears.get(parsed.data.academicYearId)
+    : Array.from(store.academicYears.values()).find((y) => y.instituteId === user.instituteId && y.isActive);
+  if (!year || year.instituteId !== user.instituteId) return { error: "Pick an academic year" };
+
+  // Validate the payment part up front so we never save half of the request.
+  const priorDue = openPriorAssignments(student.id, year.id).reduce((s, a) => s + assignmentBalance(a), 0);
+  if (paid > amount + priorDue) return { error: "Already-paid amount is more than the fee" };
+  if (paid > 0 && mode === "CHEQUE") return { error: "Record cheque payments from the collection screen (cheque details are needed)" };
+  const accounts = Array.from(store.accounts.values()).filter((a) => a.instituteId === user.instituteId);
+  const account = accounts.find((a) => a.type === (mode === "CASH" ? "CASH" : "BANK")) ?? accounts[0];
+  if (paid > 0 && !account) return { error: "Add a cash or bank account first (Bank & cash)" };
+
+  const setup = new FormData();
+  setup.set("studentId", student.id);
+  setup.set("mode", "CUSTOM");
+  setup.set("academicYearId", year.id);
+  setup.set("items", heads.map((h) => `${h.head}:${h.amount}`).join(", "));
+  setup.set("carryForward", "on");
+  const created = await setupStudentFees(setup);
+  if (created.error || !created.assignmentId) return { error: created.error ?? "Could not save the fee" };
+  if (paid <= 0) return { assignmentId: created.assignmentId };
+
+  const assn = store.feeAssignments.get(created.assignmentId)!;
+  const pay = new FormData();
+  pay.set("assignmentId", assn.id);
+  pay.set("amount", String(paid));
+  pay.set("mode", mode);
+  pay.set("accountId", account!.id);
+  pay.set("feeHeads", JSON.stringify(autoAllocate(assignmentHeadOutstanding(assn), paid)));
+  pay.set("reference", "Paid when fee was set");
+  const collected = await collectFee(pay);
+  if (collected.error) {
+    return { assignmentId: assn.id, error: `Fee saved, but the payment was not recorded: ${collected.error}` };
+  }
+  return { assignmentId: assn.id, paymentId: collected.paymentId };
 }

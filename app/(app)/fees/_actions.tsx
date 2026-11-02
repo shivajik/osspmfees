@@ -7,7 +7,7 @@ import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
 import {
   createStructure, updateStructure, assignFees, updateAssignment, updatePayment,
-  reversePayment, addFeeCharge, removeFeeCharge,
+  reversePayment, addFeeCharge, removeFeeCharge, setStudentFee,
 } from "./actions";
 import { CONDITIONAL_FEE_HEADS, FEE_HEADS } from "@/lib/fee-heads";
 import { withMinDelay } from "@/lib/utils";
@@ -476,16 +476,33 @@ export function AssignFeesButton({
 type HeadRow = { head: string; amount: string };
 
 /** Head + amount rows, serialised into the `items`/`totalAmount` fields the fee actions parse. */
-export function HeadsEditor({ initial }: { initial?: { head: string; amount: number }[] }) {
+export function HeadsEditor({
+  initial, optional = false, onTotalChange, defaultHead = FEE_HEADS[0],
+}: {
+  initial?: { head: string; amount: number }[];
+  /** No warning when left empty (e.g. fees are optional while enrolling). */
+  optional?: boolean;
+  onTotalChange?: (total: number) => void;
+  defaultHead?: string;
+}) {
   const [rows, setRows] = useState<HeadRow[]>(
     initial && initial.length
       ? initial.map((i) => ({ head: i.head, amount: String(i.amount) }))
-      : [{ head: FEE_HEADS[0], amount: "" }],
+      : [{ head: defaultHead, amount: "" }],
   );
 
   const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const norm = (h: string) => h.trim().replace(/\s+/g, " ").toLowerCase();
+  const used = new Set(rows.map((r) => norm(r.head)));
+  // A head may appear once; the server refuses duplicates too.
+  const dupe = rows.find((r, i) => r.head.trim() && rows.findIndex((o) => norm(o.head) === norm(r.head)) !== i)?.head;
   const update = (i: number, patch: Partial<HeadRow>) =>
-    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    setRows((rs) => {
+      const next = rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
+      onTotalChange?.(next.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+      return next;
+    });
+  const nextFreeHead = FEE_HEADS.find((h) => !used.has(norm(h)));
 
   const serialised = rows
     .filter((r) => r.head.trim() && Number(r.amount) > 0)
@@ -503,7 +520,11 @@ export function HeadsEditor({ initial }: { initial?: { head: string; amount: num
               value={FEE_HEADS.includes(r.head as (typeof FEE_HEADS)[number]) ? r.head : "__custom"}
               onChange={(e) => update(i, { head: e.target.value === "__custom" ? "" : e.target.value })}
             >
-              {FEE_HEADS.map((h) => <option key={h} value={h}>{h}</option>)}
+              {FEE_HEADS.map((h) => (
+                <option key={h} value={h} disabled={h !== r.head && used.has(norm(h))}>
+                  {h}{h !== r.head && used.has(norm(h)) ? " (added)" : ""}
+                </option>
+              ))}
               <option value="__custom">Custom head…</option>
             </Select>
             {!FEE_HEADS.includes(r.head as (typeof FEE_HEADS)[number]) && (
@@ -525,7 +546,11 @@ export function HeadsEditor({ initial }: { initial?: { head: string; amount: num
               type="button" variant="ghost" size="sm"
               aria-label="Remove head"
               disabled={rows.length === 1}
-              onClick={() => setRows((rs) => rs.filter((_, idx) => idx !== i))}
+              onClick={() => setRows((rs) => {
+                const next = rs.filter((_, idx) => idx !== i);
+                onTotalChange?.(next.reduce((s, x) => s + (Number(x.amount) || 0), 0));
+                return next;
+              })}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -534,7 +559,7 @@ export function HeadsEditor({ initial }: { initial?: { head: string; amount: num
         <div className="flex items-center justify-between pt-1">
           <Button
             type="button" variant="ghost" size="sm"
-            onClick={() => setRows((rs) => [...rs, { head: FEE_HEADS[0], amount: "" }])}
+            onClick={() => setRows((rs) => [...rs, { head: nextFreeHead ?? "", amount: "" }])}
           >
             <Plus className="h-3.5 w-3.5" />Add fee head
           </Button>
@@ -546,7 +571,8 @@ export function HeadsEditor({ initial }: { initial?: { head: string; amount: num
       </div>
       <input type="hidden" name="items" value={serialised} />
       <input type="hidden" name="totalAmount" value={total} />
-      {total <= 0 && <p className="text-xs text-amber-600">Add at least one fee head with an amount.</p>}
+      {dupe && <p className="text-xs text-red-600">{dupe} is added twice — keep it once.</p>}
+      {!optional && total <= 0 && <p className="text-xs text-amber-600">Add at least one fee head with an amount.</p>}
     </div>
   );
 }
@@ -665,6 +691,83 @@ export function EditStructureButton({
         >
           <StructureFields classes={classes} years={years} structure={structure} />
           {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
+        </form>
+      </Modal>
+    </>
+  );
+}
+
+/**
+ * Primary way to give a student fees: one amount, plus anything already paid.
+ * No fee structure needed.
+ */
+export function SetStudentFeeButton({
+  students, years, label = "Set fee for a student",
+}: {
+  students: { id: string; name: string; admissionNo: string; className: string }[];
+  years: { id: string; name: string; isActive?: boolean }[];
+  label?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const router = useRouter();
+  const q = query.trim().toLowerCase();
+  const matches = students.filter((s) => !q || s.name.toLowerCase().includes(q) || s.admissionNo.toLowerCase().includes(q));
+  const defaultYearId = years.find((y) => y.isActive)?.id ?? years[0]?.id ?? "";
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} disabled={!students.length}><Plus className="h-4 w-4" />{label}</Button>
+      <Modal
+        open={open} onClose={() => setOpen(false)}
+        title="Set fee for a student"
+        description="Type whatever this student will pay for the year. No fee structure needed."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button form="set-student-fee" type="submit" disabled={pending} loading={pending}>Save fee</Button>
+          </>
+        }
+      >
+        <form
+          id="set-student-fee"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            setPending(true); setError(null);
+            const r = await withMinDelay(setStudentFee(fd));
+            setPending(false);
+            if (r?.error && !r.assignmentId) return setError(r.error);
+            if (r?.error) toast.error(r.error); else toast.success(r?.paymentId ? "Fee saved and payment recorded" : "Fee saved");
+            setOpen(false);
+            router.push(r?.paymentId ? `/fees/receipts/${r.paymentId}` : `/fees/collect/${r?.assignmentId}`);
+          }}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        >
+          <div className="sm:col-span-2">
+            <Field label="Student *">
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or admission no." className="mb-2" />
+              <Select name="studentId" required>
+                {matches.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.admissionNo} · {s.className}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <HeadsEditor defaultHead="Tuition fee" />
+          <Field label="Already paid (₹)" hint="Leave 0 if nothing paid yet"><Input name="paid" type="number" inputMode="numeric" min="0" step="1" defaultValue={0} /></Field>
+          <Field label="Paid by">
+            <Select name="mode" defaultValue="CASH">
+              <option value="CASH">Cash</option>
+              <option value="UPI">UPI</option>
+              <option value="BANK">Bank transfer</option>
+            </Select>
+          </Field>
+          <Field label="Academic year">
+            <Select name="academicYearId" defaultValue={defaultYearId}>
+              {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.isActive ? " (current)" : ""}</option>)}
+            </Select>
+          </Field>
+          {error && <p className="sm:col-span-2 text-sm text-red-600">{error}</p>}
         </form>
       </Modal>
     </>
