@@ -1,5 +1,5 @@
 // Resolves the "@/..." path alias (tsconfig "paths") for `node --test`.
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -14,7 +14,8 @@ export async function resolve(specifier, context, next) {
   // Extensionless relative TS imports, as written for the bundler.
   if (specifier.startsWith(".") && !path.extname(specifier) && context.parentURL?.endsWith(".ts")) {
     const base = new URL(specifier, context.parentURL);
-    if (existsSync(base.pathname.slice(1) + ".ts") || existsSync(base.pathname + ".ts")) return next(base.href + ".ts", context);
+    // Decode the URL (spaces, parentheses in "app/(app)") before touching disk.
+    if (existsSync(fileURLToPath(base) + ".ts")) return next(base.href + ".ts", context);
   }
   return next(specifier, context);
 }

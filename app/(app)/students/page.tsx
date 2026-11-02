@@ -67,6 +67,7 @@ export default async function StudentsPage({
               classes={classes.map((c) => ({ id: c.id, name: c.name }))}
               batches={batches.map((b) => ({ id: b.id, name: b.name, classId: b.classId }))}
               years={years.map((y) => ({ id: y.id, name: y.name, isActive: y.isActive }))}
+              canSetFee={hasPermission(permissionsForRole(user.role), PERMISSIONS.FEE_STRUCTURE_WRITE)}
             />
           </div>
         ) : null}

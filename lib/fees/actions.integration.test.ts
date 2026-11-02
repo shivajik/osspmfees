@@ -161,7 +161,7 @@ test("TC fee: add, block duplicates on every path, collect, block removal", asyn
   assert.match(dup.error ?? "", /already charged/);
   // Same head twice in one custom entry is also refused.
   const twice = await A.setupStudentFees(fd({ studentId: "s1", mode: "CUSTOM", academicYearId: "ay_cur", items: "TC fees:200, TC fees:200" }));
-  assert.match(twice.error ?? "", /already charged/);
+  assert.match(twice.error ?? "", /added twice/);
   // A different year is fine.
   assert.ok((await A.setupStudentFees(fd({ studentId: "s2", mode: "CUSTOM", academicYearId: "ay_old", items: "TC fees:200" }))).assignmentId);
 
@@ -270,4 +270,106 @@ test("every money-changing action is audit logged", async () => {
   await A.reversePayment(fd({ paymentId: paymentId!, reason: "test" }));
   const actions = store.auditLogs.map((l) => l.action);
   for (const a of ["fee.collect", "fee_charge.add", "fee.payment_reverse"]) assert.ok(actions.includes(a), a);
+});
+
+// --- Simple counter form (one amount, set freely per student) ---------------------
+
+test("simple form: any amount per student, carried dues added, nothing else recorded", async () => {
+  await setupOldYear("s2", 800);
+  const r = await A.setupStudentFees(fd({ studentId: "s2", mode: "CUSTOM", academicYearId: "ay_cur", items: "School fees:5000", carryForward: "on" }));
+  const a = store.feeAssignments.get(r.assignmentId!)!;
+  assert.equal(a.totalPayable, 5000);
+  assert.equal(a.discount, 0);
+  assert.equal(a.discountReason, undefined);
+  assert.equal(a.previousBalance, 800);
+  assert.equal(S.assignmentBalance(a), 5800);
+  assert.match((await collect(a.id, [{ head: "Previous year balance", amount: 800 }, { head: "School fees", amount: 5001 }])).error ?? "", /exceeds/);
+  assert.ok((await collect(a.id, [{ head: "Previous year balance", amount: 800 }, { head: "School fees", amount: 5000 }])).paymentId);
+  assert.equal(a.status, "PAID");
+});
+
+// --- Set fee for a student (no structure) and fees at enrolment ---------------------
+
+const St = await import("@/app/(app)/students/actions");
+
+test("set fee only: one amount, no structure, nothing paid", async () => {
+  const r = await A.setStudentFee(fd({ studentId: "s1", amount: 5000 }));
+  assert.ok(r.assignmentId, r.error);
+  const a = store.feeAssignments.get(r.assignmentId!)!;
+  assert.equal(a.feeStructureId, "");
+  assert.equal(a.academicYearId, "ay_cur"); // defaults to the current year
+  assert.equal(S.assignmentBalance(a), 5000);
+  assert.equal(r.paymentId, undefined);
+});
+
+test("set fee with already-paid: receipt created, cash credited, old dues cleared first", async () => {
+  await setupOldYear("s1", 800);
+  const r = await A.setStudentFee(fd({ studentId: "s1", amount: 5000, paid: 2000 }));
+  assert.ok(r.paymentId, r.error);
+  const a = store.feeAssignments.get(r.assignmentId!)!;
+  const p = store.feePayments.get(r.paymentId!)!;
+  assert.equal(p.amount, 2000);
+  assert.deepEqual(p.feeHeadBreakup, [{ head: "Previous year balance", amount: 800 }, { head: "Tuition fee", amount: 1200 }]);
+  assert.equal(S.assignmentBalance(a), 3800);
+  assert.equal(cash(), 2000);
+});
+
+test("set fee rejects bad input and saves nothing", async () => {
+  assert.match((await A.setStudentFee(fd({ studentId: "s1", amount: 0 }))).error ?? "", /fee/i);
+  assert.match((await A.setStudentFee(fd({ studentId: "s1", amount: 1000, paid: 1500 }))).error ?? "", /more than the fee/);
+  assert.match((await A.setStudentFee(fd({ studentId: "s1", amount: 1000, paid: 100, mode: "CHEQUE" }))).error ?? "", /cheque/i);
+  assert.match((await A.setStudentFee(fd({ studentId: "nope", amount: 1000 }))).error ?? "", /not found/);
+  assert.equal(store.feeAssignments.size, 0);
+  assert.equal(store.feePayments.size, 0);
+  currentUser = cashier;
+  assert.match((await A.setStudentFee(fd({ studentId: "s1", amount: 1000 }))).error ?? "", /Not authorized/);
+  currentUser = otherSchool;
+  assert.match((await A.setStudentFee(fd({ studentId: "s1", amount: 1000 }))).error ?? "", /not found/);
+});
+
+test("enrol with fee and already-paid creates student, fee and receipt", async () => {
+  store.batches.set("b10", { id: "b10", instituteId: "inst_a", classId: "c10", academicYearId: "ay_cur", name: "10-A", createdAt: now });
+  const base = { name: "New Kid", classId: "c10", batchId: "b10", academicYearId: "ay_cur" };
+  const r = await St.createStudent(fd({ ...base, admissionNo: "201", items: "Admission fee:3000, Tuition fee:2000", feePaid: 1000 }));
+  assert.ok(r && r.studentId && !r.error, r?.error);
+  const a = Array.from(store.feeAssignments.values()).find((x) => x.studentId === r!.studentId)!;
+  assert.equal(S.assignmentBalance(a), 4000);
+
+  // No fee typed → student only, fees left for later.
+  const r2 = await St.createStudent(fd({ ...base, admissionNo: "202" }));
+  assert.ok(r2?.studentId);
+  assert.equal(Array.from(store.feeAssignments.values()).filter((x) => x.studentId === r2!.studentId).length, 0);
+
+  // Paid more than fee → refused before the student is created.
+  const r3 = await St.createStudent(fd({ ...base, admissionNo: "203", items: "Tuition fee:1000", feePaid: 2000 }));
+  assert.match(r3?.error ?? "", /more than the fee/);
+  assert.ok(!Array.from(store.students.values()).some((s) => s.admissionNo === "203"));
+});
+
+// --- Fee heads: each head once, everywhere ------------------------------------------
+
+test("set fee with heads: total is the sum, each head collectable on its own", async () => {
+  const r = await A.setStudentFee(fd({ studentId: "s1", items: "Admission fee:3000, I unit test:300, I term exam:700" }));
+  const a = store.feeAssignments.get(r.assignmentId!)!;
+  assert.equal(S.assignmentBalance(a), 4000);
+  assert.deepEqual(S.assignmentHeadOutstanding(a).map((h) => h.head), ["Admission fee", "I unit test", "I term exam"]);
+});
+
+test("duplicate heads are refused in every fee form (case and spacing ignored)", async () => {
+  const dupItems = "Admission fee:1000, admission  FEE :500";
+  const msg = /added twice/;
+  assert.match((await A.createStructure(fd({ name: "Dup", totalAmount: 1500, classId: "c10", academicYearId: "ay_cur", items: dupItems })))?.error ?? "", msg);
+  assert.match((await A.updateStructure(fd({ id: "fs10", name: "Grade 10 Fees", totalAmount: 1500, classId: "c10", academicYearId: "ay_cur", items: dupItems })))?.error ?? "", msg);
+  assert.equal(store.feeStructures.get("fs10")!.items.length, 3); // unchanged
+  assert.match((await A.setupStudentFees(fd({ studentId: "s1", mode: "CUSTOM", academicYearId: "ay_cur", items: dupItems }))).error ?? "", msg);
+  assert.match((await A.setStudentFee(fd({ studentId: "s1", items: dupItems }))).error ?? "", msg);
+  const ok = await A.setStudentFee(fd({ studentId: "s1", items: "Tuition fee:1000" }));
+  assert.match((await A.updateAssignment(fd({ assignmentId: ok.assignmentId!, feeStructureId: "", items: dupItems, discount: 0 })))?.error ?? "", msg);
+  assert.equal(store.feeAssignments.size, 1);
+});
+
+test("fee structure total always equals its heads", async () => {
+  await A.createStructure(fd({ name: "Grade 9", totalAmount: 99999, classId: "c10", academicYearId: "ay_old", items: "Tuition fee:4000, I unit test:300" }));
+  const fs = Array.from(store.feeStructures.values()).find((f) => f.name === "Grade 9")!;
+  assert.equal(fs.totalAmount, 4300);
 });

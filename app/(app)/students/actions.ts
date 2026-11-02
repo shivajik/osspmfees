@@ -5,6 +5,7 @@ import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac"
 import { pushAudit, store } from "@/lib/db/store";
 import { uid } from "@/lib/utils";
 import { saveStore } from "@/lib/db/persistence";
+import { setStudentFee } from "../fees/actions";
 
 const schema = z.object({
   admissionNo: z.string().min(1).max(40),
@@ -17,7 +18,14 @@ const schema = z.object({
   academicYearId: z.string().min(1),
 });
 
-export async function createStudent(fd: FormData): Promise<{ error?: string } | void> {
+/** Optional fee captured while enrolling; blank means "set it later". */
+const enrollFeeSchema = z.object({
+  /** Fee heads from the editor ("Head:amount, ..."); blank = set fees later. */
+  items: z.string().max(2000).optional().or(z.literal("")),
+  feePaid: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+});
+
+export async function createStudent(fd: FormData): Promise<{ error?: string; studentId?: string } | void> {
   const user = await requireUser();
   if (!hasPermission(permissionsForRole(user.role), PERMISSIONS.STUDENT_WRITE)) return { error: "Not authorized" };
   if (!user.instituteId) return { error: "Institute scope required" };
@@ -30,6 +38,11 @@ export async function createStudent(fd: FormData): Promise<{ error?: string } | 
   if (!cls || cls.instituteId !== user.instituteId) return { error: "Invalid class" };
   if (!bat || bat.instituteId !== user.instituteId || bat.classId !== cls.id) return { error: "Invalid batch" };
   if (!ay || ay.instituteId !== user.instituteId) return { error: "Invalid year" };
+  const fee = enrollFeeSchema.safeParse(Object.fromEntries(fd));
+  if (!fee.success) return { error: "Enter fees as whole rupees" };
+  const feeAmount = (fee.data.items ?? "").split(",").reduce((sum, part) => sum + Math.max(0, Number(part.split(":")[1]) || 0), 0);
+  if (fee.data.feePaid > 0 && feeAmount <= 0) return { error: "Enter the fee before the amount already paid" };
+  if (fee.data.feePaid > feeAmount) return { error: "Already-paid amount is more than the fee" };
 
   for (const s of store.students.values()) {
     if (s.instituteId === user.instituteId && s.admissionNo.toLowerCase() === parsed.data.admissionNo.toLowerCase()) {
@@ -53,16 +66,26 @@ export async function createStudent(fd: FormData): Promise<{ error?: string } | 
     createdAt: new Date().toISOString(),
   });
 
-  // No fees are attached here on purpose: what a student pays is decided at the
-  // counter ("Collect fees" → Set up fees), where a structure can be picked or
-  // per-student heads entered. Silently charging the class structure was wrong
-  // for schools where no two students pay the same.
+  // The class structure is never charged silently — no two students pay the
+  // same in these schools. Staff may type this student's fee (and anything
+  // already paid) right here, or leave it for the collection counter.
 
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "student.create", entity: "Student", entityId: id, meta: { admissionNo: parsed.data.admissionNo },
   });
   await saveStore();
+
+  if (feeAmount > 0) {
+    const f = new FormData();
+    f.set("studentId", id);
+    f.set("academicYearId", parsed.data.academicYearId);
+    f.set("items", fee.data.items ?? "");
+    f.set("paid", String(fee.data.feePaid));
+    const r = await setStudentFee(f);
+    if (r.error) return { studentId: id, error: `Student added, but ${r.error.charAt(0).toLowerCase()}${r.error.slice(1)}` };
+  }
+  return { studentId: id };
 }
 
 const updateSchema = schema.extend({

@@ -1,11 +1,13 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { Input, Select, Field } from "@/components/ui/input";
 import { createStudent, updateStudent } from "./actions";
+import { HeadsEditor } from "../fees/_actions";
 
 type Ref = { id: string; name: string };
 type BatchRef = { id: string; name: string; classId: string };
@@ -99,11 +101,13 @@ export function EditStudentButton({
 }
 
 export function NewStudentButton({
-  classes, batches, years,
+  classes, batches, years, canSetFee = false,
 }: {
   classes: { id: string; name: string }[];
   batches: { id: string; name: string; classId: string }[];
   years: { id: string; name: string; isActive?: boolean }[];
+  /** Shows the optional "fee / already paid" boxes. */
+  canSetFee?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +139,8 @@ export function NewStudentButton({
             setPending(true); setError(null);
             const r = await createStudent(fd);
             setPending(false);
+            // Student created but the fee step failed: close, and say what to fix.
+            if (r?.error && r.studentId) { toast.error(r.error); setOpen(false); return router.refresh(); }
             if (r?.error) return setError(r.error);
             setOpen(false); router.refresh();
           }}
@@ -165,6 +171,13 @@ export function NewStudentButton({
               </Select>
             </Field>
           </div>
+          {canSetFee && (
+            <div className="sm:col-span-2 grid grid-cols-1 gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 sm:grid-cols-2">
+              <p className="sm:col-span-2 text-xs font-medium">Fees (optional — can be set later)</p>
+              <HeadsEditor optional defaultHead="Tuition fee" />
+              <Field label="Already paid (₹)" hint="Cash — a receipt is created"><Input name="feePaid" type="number" inputMode="numeric" min="0" step="1" placeholder="0" /></Field>
+            </div>
+          )}
           {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
         </form>
       </Modal>
