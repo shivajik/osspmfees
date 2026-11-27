@@ -38,3 +38,34 @@ export function InstituteFilter({ institutes }: { institutes: { id: string; name
     </div>
   );
 }
+
+/** A URL-backed dropdown (class, academic year…) for the fee report tabs. */
+export function ParamFilter({
+  param, allLabel, options,
+}: { param: string; allLabel: string; options: { id: string; name: string }[] }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+  const current = sp.get(param) ?? "";
+
+  const onChange = (value: string) => {
+    const params = new URLSearchParams(sp.toString());
+    if (value) params.set(param, value);
+    else params.delete(param);
+    const s = params.toString();
+    startTransition(() => router.push(s ? `${pathname}?${s}` : pathname));
+  };
+
+  return (
+    <select
+      value={current}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={isPending}
+      className="h-9 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm outline-none focus:border-[var(--color-brand)] disabled:opacity-60"
+    >
+      <option value="">{allLabel}</option>
+      {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+    </select>
+  );
+}

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
 import {
-  scopeByInstitute, store, assignmentYearId, grossPayable, assignmentBalance, assignmentFees } from "@/lib/db/store";
+  scopeByInstitute, store, assignmentYearId, grossPayable, assignmentBalance, counterDiscount, totalDiscount, assignmentFees } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +28,7 @@ export default async function FeesPage({
 
   const sp = await searchParams;
   const scope = user.instituteId;
-  const params = parseListParams(sp, { filterKeys: scope ? ["status", "academicYearId"] : ["status", "academicYearId", "instituteId"] });
+  const params = parseListParams(sp, { filterKeys: scope ? ["status", "academicYearId", "classId", "discount"] : ["status", "academicYearId", "classId", "discount", "instituteId"] });
 
   const canCollect = hasPermission(perms, PERMISSIONS.FEE_COLLECT) && !!scope;
   const canAdjust = hasPermission(perms, PERMISSIONS.FEE_ADJUST) && !!scope;
@@ -42,8 +42,11 @@ export default async function FeesPage({
     if (params.filters.instituteId && a.instituteId !== params.filters.instituteId) return false;
     if (params.filters.status && a.status !== params.filters.status) return false;
     if (params.filters.academicYearId && assignmentYearId(a) !== params.filters.academicYearId) return false;
-    if (!q) return true;
     const s = store.students.get(a.studentId);
+    if (params.filters.classId && s?.classId !== params.filters.classId) return false;
+    if (params.filters.discount === "yes" && totalDiscount(a) <= 0) return false;
+    if (params.filters.discount === "no" && totalDiscount(a) > 0) return false;
+    if (!q) return true;
     return (
       (s?.name ?? "").toLowerCase().includes(q) ||
       (s?.admissionNo ?? "").toLowerCase().includes(q)
@@ -79,7 +82,7 @@ export default async function FeesPage({
   const totalPayable = assignments.reduce((s, a) => s + grossPayable(a), 0);
   const totalPaid = assignments.reduce((s, a) => s + a.totalPaid, 0);
   const totalPrevious = assignments.reduce((s, a) => s + (a.previousBalance ?? 0), 0);
-  const totalDiscount = assignments.reduce((s, a) => s + a.discount, 0);
+  const totalDiscountGiven = assignments.reduce((s, a) => s + totalDiscount(a), 0);
   const totalOutstanding = assignments.reduce((s, a) => s + assignmentBalance(a), 0);
 
   return (
@@ -116,7 +119,7 @@ export default async function FeesPage({
         </Card>
         <Card>
           <CardHeader><div><CardTitle>Discount</CardTitle><CardDescription>Concessions given</CardDescription></div></CardHeader>
-          <p className="text-2xl font-semibold text-sky-600">{formatCurrency(totalDiscount)}</p>
+          <p className="text-2xl font-semibold text-sky-600">{formatCurrency(totalDiscountGiven)}</p>
         </Card>
         <Card>
           <CardHeader><div><CardTitle>Collected</CardTitle><CardDescription>Received to date</CardDescription></div></CardHeader>
@@ -152,6 +155,14 @@ export default async function FeesPage({
           {
             key: "academicYearId", label: "Academic year",
             options: yearOptions.map((y) => ({ value: y.id, label: y.name })),
+          },
+          {
+            key: "classId", label: "Class",
+            options: classOptions.map((c) => ({ value: c.id, label: c.name })),
+          },
+          {
+            key: "discount", label: "Discount",
+            options: [{ value: "yes", label: "With discount" }, { value: "no", label: "No discount" }],
           },
           {
             key: "status", label: "Status",
@@ -192,12 +203,17 @@ export default async function FeesPage({
             </span>
           )},
           { key: "disc", header: "Discount", render: (r) => (
-            r.discount > 0 ? (
+            totalDiscount(r) > 0 ? (
               <div>
-                <div className="font-medium text-sky-600">− {formatCurrency(r.discount)}</div>
-                <div className="text-xs text-[var(--color-fg-muted)]">
-                  by {r.discountByName ?? "—"}{r.discountReason ? ` · ${r.discountReason}` : ""}
-                </div>
+                <div className="font-medium text-sky-600">− {formatCurrency(totalDiscount(r))}</div>
+                {r.discount > 0 && (
+                  <div className="text-xs text-[var(--color-fg-muted)]">
+                    by {r.discountByName ?? "—"}{r.discountReason ? ` · ${r.discountReason}` : ""}
+                  </div>
+                )}
+                {counterDiscount(r) > 0 && (
+                  <div className="text-xs text-[var(--color-fg-muted)]">{formatCurrency(counterDiscount(r))} at counter</div>
+                )}
               </div>
             ) : <span className="text-[var(--color-fg-subtle)]">—</span>
           )},

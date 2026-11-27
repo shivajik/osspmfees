@@ -397,6 +397,16 @@ export function assignmentPayments(assignmentId: string): FeePayment[] {
   return Array.from(store.feePayments.values()).filter((p) => p.assignmentId === assignmentId && isActivePayment(p));
 }
 
+/** Concessions granted at the collection counter on active receipts. */
+export function counterDiscount(a: FeeAssignment): number {
+  return assignmentPayments(a.id).reduce((sum, p) => sum + (p.discount ?? 0), 0);
+}
+
+/** Every concession on an assignment: set on the fee + given at the counter. */
+export function totalDiscount(a: FeeAssignment): number {
+  return a.discount + counterDiscount(a);
+}
+
 /** Carried-forward dues on an assignment that are still unpaid. */
 export function previousDue(a: FeeAssignment): number {
   return Math.max(0, (a.previousBalance ?? 0) - a.totalPaid);
