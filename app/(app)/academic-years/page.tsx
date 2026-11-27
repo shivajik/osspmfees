@@ -36,10 +36,12 @@ export default async function AcademicYearsPage({
   );
 
   const sp = await searchParams;
-  const params = parseListParams(sp, { filterKeys: user.instituteId ? [] : ["instituteId"] });
+  const params = parseListParams(sp, { filterKeys: user.instituteId ? ["status"] : ["instituteId", "status"] });
   const q = params.q.toLowerCase();
   const filtered = sorted.filter((r) => {
     if (params.filters.instituteId && r.instituteId !== params.filters.instituteId) return false;
+    if (params.filters.status === "active" && !r.isActive) return false;
+    if (params.filters.status === "inactive" && r.isActive) return false;
     if (!q) return true;
     return r.name.toLowerCase().includes(q);
   });
@@ -54,7 +56,10 @@ export default async function AcademicYearsPage({
       />
       <ListToolbar
         placeholder="Search by year…"
-        filters={user.instituteId ? [] : [{ key: "instituteId", label: "Institute", options: instituteOptions.map((i) => ({ value: i.id, label: i.name })) }]}
+        filters={[
+          ...(user.instituteId ? [] : [{ key: "instituteId", label: "Institute", options: instituteOptions.map((i) => ({ value: i.id, label: i.name })) }]),
+          { key: "status", label: "Status", options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }] },
+        ]}
       />
       <DataTable
         rowKey={(r) => r.id}

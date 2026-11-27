@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { assignmentYearId, scopeByInstitute, store, isActivePayment, assignmentBalance } from "@/lib/db/store";
+import { assignmentYearId, scopeByInstitute, store, isActivePayment } from "@/lib/db/store";
 import { renderTablePdf } from "@/lib/export/pdf";
 import { renderXlsx } from "@/lib/export/xlsx";
+import { classRows, filterAssignments, headRows, studentHeadRows } from "@/lib/reports/fee-heads";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,9 @@ type Format = "csv" | "xlsx" | "pdf";
 const TAB_TITLES: Record<string, string> = {
   daily: "Daily collection",
   monthly: "Monthly collection",
-  student: "Student collection",
+  classwise: "Class-wise fees",
+  student: "Student-wise fees",
+  headwise: "Fee head-wise",
   pending: "Pending fees",
   discount: "Discounts given",
   expense: "Expense summary",
@@ -50,6 +53,14 @@ export async function GET(req: Request) {
     return u?.role ? `${name} (${u.role.replace("_", " ")})` : name;
   };
 
+  const feeAssignments = () => filterAssignments(scopeByInstitute(store.feeAssignments.values(), scope), {
+    classId: url.searchParams.get("classId") ?? "",
+    yearId: url.searchParams.get("yearId") ?? "",
+  });
+  const inst = (id: string) => (showInstitute ? [instituteName(id)] : []);
+  const instHead = showInstitute ? ["Institute"] : [];
+  const total = <T,>(xs: T[], f: (x: T) => number) => xs.reduce((s, x) => s + f(x), 0);
+
   let rows: (string | number)[][] = [];
   if (tab === "daily" || tab === "monthly") {
     const key = tab === "daily" ? 10 : 7;
@@ -75,25 +86,47 @@ export async function GET(req: Request) {
         Array.from(v.by).filter(Boolean).join(", "),
         v.total,
       ]));
+  } else if (tab === "classwise") {
+    const { heads, rows: students } = studentHeadRows(feeAssignments());
+    const cls = classRows(students, showInstitute);
+    const pendHeads = heads.filter((h) => cls.some((c) => c.pendingByHead[h]));
+    rows = [[...instHead, "Class", "Students", "With dues", "Payable", "Received", "Balance", ...pendHeads.map((h) => `Pending: ${h}`)]];
+    cls.forEach((c) => rows.push([
+      ...inst(c.instituteId), c.className, c.students, c.pendingStudents, c.payable, c.received, c.balance,
+      ...pendHeads.map((h) => c.pendingByHead[h] ?? 0),
+    ]));
+    rows.push([
+      ...(showInstitute ? [""] : []), "TOTAL", total(cls, (c) => c.students), total(cls, (c) => c.pendingStudents),
+      total(cls, (c) => c.payable), total(cls, (c) => c.received), total(cls, (c) => c.balance),
+      ...pendHeads.map((h) => total(cls, (c) => c.pendingByHead[h] ?? 0)),
+    ]);
   } else if (tab === "student") {
-    const map = new Map<string, { payable: number; paid: number }>();
-    scopeByInstitute(store.feeAssignments.values(), scope).forEach((a) => {
-      const cur = map.get(a.studentId) ?? { payable: 0, paid: 0 };
-      cur.payable += a.totalPayable; cur.paid += a.totalPaid;
-      map.set(a.studentId, cur);
-    });
-    rows = [["Admission", "Student", "Payable", "Paid", "Balance"]];
-    map.forEach((v, sid) => {
-      const s = store.students.get(sid);
-      rows.push([s?.admissionNo ?? "", s?.name ?? "", v.payable, v.paid, v.payable - v.paid]);
-    });
+    const { heads, rows: students } = studentHeadRows(feeAssignments());
+    const recHeads = heads.filter((h) => students.some((r) => r.receivedByHead[h]));
+    rows = [["Sr", ...instHead, "Class", "Admission", "Student", "Payable", ...recHeads, "Received", "Balance"]];
+    students.forEach((r, i) => rows.push([
+      i + 1, ...inst(r.instituteId), r.className, r.adm, r.name, r.payable,
+      ...recHeads.map((h) => r.receivedByHead[h] ?? 0), r.received, r.balance,
+    ]));
+    rows.push([
+      "", ...(showInstitute ? [""] : []), "", "", "TOTAL", total(students, (r) => r.payable),
+      ...recHeads.map((h) => total(students, (r) => r.receivedByHead[h] ?? 0)),
+      total(students, (r) => r.received), total(students, (r) => r.balance),
+    ]);
+  } else if (tab === "headwise") {
+    const { heads, rows: students } = studentHeadRows(feeAssignments());
+    const hr = headRows(heads, students);
+    rows = [["Fee head", "Charged", "Received", "Pending", "Students pending"]];
+    hr.forEach((h) => rows.push([h.head, h.charged, h.received, h.pending, h.students]));
+    rows.push(["TOTAL", total(hr, (h) => h.charged), total(hr, (h) => h.received), total(hr, (h) => h.pending), ""]);
   } else if (tab === "pending") {
-    rows = [["Admission", "Student", "Class", "Balance", "Status"]];
-    scopeByInstitute(store.feeAssignments.values(), scope).filter((a) => assignmentBalance(a) > 0).forEach((a) => {
-      const s = store.students.get(a.studentId);
-      const cls = s ? store.classes.get(s.classId)?.name ?? "" : "";
-      rows.push([s?.admissionNo ?? "", s?.name ?? "", cls, assignmentBalance(a), a.status]);
-    });
+    const students = studentHeadRows(feeAssignments()).rows.filter((r) => r.balance > 0);
+    rows = [[...instHead, "Class", "Admission", "Student", "Payable", "Received", "Balance", "Pending heads"]];
+    students.forEach((r) => rows.push([
+      ...inst(r.instituteId), r.className, r.adm, r.name, r.payable, r.received, r.balance,
+      Object.entries(r.pendingByHead).filter(([, v]) => v > 0).map(([h, v]) => `${h}: ${v}`).join("; "),
+    ]));
+    rows.push([...(showInstitute ? [""] : []), "", "", "TOTAL", total(students, (r) => r.payable), total(students, (r) => r.received), total(students, (r) => r.balance), ""]);
   } else if (tab === "discount") {
     const counter = new Map<string, { amount: number; by: Set<string>; reasons: Set<string> }>();
     scopeByInstitute(store.feePayments.values(), scope).filter(isActivePayment).forEach((p) => {
@@ -109,7 +142,7 @@ export async function GET(req: Request) {
       "Admission", "Student", "Class", "Academic year",
       "On assignment", "At counter", "Total discount", "Approved by", "Reason",
     ]];
-    scopeByInstitute(store.feeAssignments.values(), scope)
+    feeAssignments()
       .map((a) => {
         const c = counter.get(a.id);
         return { a, counter: c?.amount ?? 0, by: c?.by ?? new Set<string>(), reasons: c?.reasons ?? new Set<string>() };
@@ -184,7 +217,11 @@ export async function GET(req: Request) {
     const columns = header.map((h, i) => {
       const sample = body.find((r) => r[i] !== undefined);
       const isNumeric = typeof sample?.[i] === "number";
-      return { header: String(h), width: isNumeric ? 90 : 120, align: (isNumeric ? "right" : "left") as "left" | "right" };
+      // Size each column to its longest value so long text (e.g. "Collected by")
+      // doesn't run into the next column.
+      const longest = Math.max(String(h).length, ...body.map((r) => String(r[i] ?? "").length));
+      const width = isNumeric ? Math.max(50, Math.min(longest, 12) * 6 + 16) : Math.max(60, Math.min(longest, 60) * 5.2 + 16);
+      return { header: String(h), width, align: (isNumeric ? "right" : "left") as "left" | "right" };
     });
     const institute = scope ? store.institutes.get(scope)?.name : "All institutes";
     const bytes = await renderTablePdf({

@@ -2,21 +2,30 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac";
-import { assignmentYearId, scopeByInstitute, store, isActivePayment, assignmentBalance } from "@/lib/db/store";
+import { assignmentYearId, scopeByInstitute, store, isActivePayment } from "@/lib/db/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { Download } from "lucide-react";
-import { InstituteFilter } from "./_filters";
+import { InstituteFilter, ParamFilter } from "./_filters";
+import {
+  classRows, compareClassNames, filterAssignments, headRows, studentHeadRows,
+  type StudentHeadRow,
+} from "@/lib/reports/fee-heads";
 
-type Tab = "daily" | "monthly" | "student" | "pending" | "discount" | "expense" | "cashbook" | "bank";
+/** Tabs built from fee assignments — these honour the class / year filters. */
+const FEE_TABS: Tab[] = ["classwise", "student", "headwise", "pending", "discount"];
+
+type Tab = "daily" | "monthly" | "classwise" | "student" | "headwise" | "pending" | "discount" | "expense" | "cashbook" | "bank";
 
 const TABS: { key: Tab; label: string; needs?: string }[] = [
   { key: "daily", label: "Daily collection" },
   { key: "monthly", label: "Monthly collection" },
-  { key: "student", label: "Student collection" },
+  { key: "classwise", label: "Class-wise" },
+  { key: "student", label: "Student-wise" },
+  { key: "headwise", label: "Fee head-wise" },
   { key: "pending", label: "Pending fees" },
   { key: "discount", label: "Discounts" },
   { key: "expense", label: "Expense summary" },
@@ -80,12 +89,26 @@ export default async function ReportsPage({
 
   const payments = scopeByInstitute(store.feePayments.values(), scope).filter(isActivePayment);
   const expenses = scopeByInstitute(store.expenses.values(), scope);
-  const assignments = scopeByInstitute(store.feeAssignments.values(), scope);
+  const classId = pick("classId");
+  const yearId = pick("yearId");
+  const assignments = filterAssignments(scopeByInstitute(store.feeAssignments.values(), scope), { classId, yearId });
+  const classOptions = scopeByInstitute(store.classes.values(), scope)
+    .map((c) => ({ id: c.id, name: showInstituteName(c.instituteId, c.name, !scope) }))
+    .sort((a, b) => compareClassNames(a.name, b.name));
+  const yearOptions = scopeByInstitute(store.academicYears.values(), scope)
+    .map((y) => ({ id: y.id, name: showInstituteName(y.instituteId, y.name, !scope) }))
+    .sort((a, b) => b.name.localeCompare(a.name));
+  const feeTab = FEE_TABS.includes(tab);
   const txns = scopeByInstitute(store.transactions.values(), scope);
   const accounts = scopeByInstitute(store.accounts.values(), scope);
 
   const qs = (extra: Record<string, string>) =>
-    new URLSearchParams({ ...(chosen ? { instituteId: chosen } : {}), ...extra }).toString();
+    new URLSearchParams({
+      ...(chosen ? { instituteId: chosen } : {}),
+      ...(classId ? { classId } : {}),
+      ...(yearId ? { yearId } : {}),
+      ...extra,
+    }).toString();
 
   return (
     <>
@@ -123,10 +146,18 @@ export default async function ReportsPage({
       </div>
 
       {instituteOptions.length > 0 && <InstituteFilter institutes={instituteOptions} />}
+      {feeTab && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <ParamFilter param="classId" allLabel="Class: All" options={classOptions} />
+          <ParamFilter param="yearId" allLabel="Academic year: All" options={yearOptions} />
+        </div>
+      )}
 
       {tab === "daily" && <Daily payments={payments} showInstitute={showInstitute} />}
       {tab === "monthly" && <Monthly payments={payments} showInstitute={showInstitute} />}
-      {tab === "student" && <StudentSummary assignments={assignments} showInstitute={showInstitute} />}
+      {tab === "classwise" && <ClassWise assignments={assignments} showInstitute={showInstitute} />}
+      {tab === "student" && <StudentWise assignments={assignments} showInstitute={showInstitute} />}
+      {tab === "headwise" && <HeadWise assignments={assignments} />}
       {tab === "pending" && <Pending assignments={assignments} showInstitute={showInstitute} />}
       {tab === "discount" && <Discounts assignments={assignments} payments={payments} showInstitute={showInstitute} />}
       {tab === "expense" && <ExpenseSummary expenses={expenses} showInstitute={showInstitute} />}
@@ -216,75 +247,140 @@ function Monthly({ payments, showInstitute }: { payments: Payments; showInstitut
   );
 }
 
-function StudentSummary({ assignments, showInstitute }: { assignments: Assignments; showInstitute: boolean }) {
-  const byStudent = new Map<string, { paid: number; payable: number; instituteId: string }>();
-  assignments.forEach((a) => {
-    const cur = byStudent.get(a.studentId) ?? { paid: 0, payable: 0, instituteId: a.instituteId };
-    cur.payable += a.totalPayable; cur.paid += a.totalPaid;
-    byStudent.set(a.studentId, cur);
-  });
-  const rows = Array.from(byStudent.entries()).map(([sid, v]) => {
-    const s = store.students.get(sid);
-    return {
-      id: sid,
-      instituteId: v.instituteId,
-      name: s?.name ?? sid,
-      adm: s?.admissionNo ?? "",
-      payable: v.payable,
-      paid: v.paid,
-      balance: v.payable - v.paid,
-    };
-  }).sort((a, b) => b.balance - a.balance);
+const showInstituteName = (instituteId: string, name: string, withInstitute: boolean) =>
+  withInstitute ? `${name} — ${instituteName(instituteId)}` : name;
+
+const money = (v: number) => (v ? formatCurrency(v) : <span className="text-[var(--color-fg-subtle)]">—</span>);
+const sum = <T,>(rows: T[], f: (r: T) => number) => rows.reduce((s, r) => s + f(r), 0);
+
+/** Head breakdown as compact "Head: ₹x" lines. */
+function HeadList({ byHead }: { byHead: Record<string, number> }) {
+  const items = Object.entries(byHead).filter(([, v]) => v > 0);
+  if (!items.length) return <span className="text-[var(--color-fg-subtle)]">—</span>;
   return (
-    <DataTable rowKey={(r) => r.id} rows={rows} empty="No students"
-      columns={[
-        ...instituteColumn<(typeof rows)[number]>(showInstitute),
-        { key: "adm", header: "Admission #", render: (r) => <span className="font-mono text-xs">{r.adm}</span> },
-        { key: "name", header: "Student", render: (r) => <span className="font-medium">{r.name}</span> },
-        { key: "payable", header: "Payable", render: (r) => formatCurrency(r.payable) },
-        { key: "paid", header: "Paid", render: (r) => <span className="text-emerald-600">{formatCurrency(r.paid)}</span> },
-        { key: "bal", header: "Balance", render: (r) => <span className="text-amber-600 font-semibold">{formatCurrency(r.balance)}</span> },
-      ]}
-    />
+    <div className="flex flex-col gap-0.5 text-xs">
+      {items.map(([h, v]) => (
+        <div key={h}><span className="text-[var(--color-fg-muted)]">{h}:</span> {formatCurrency(v)}</div>
+      ))}
+    </div>
   );
 }
 
-function Pending({ assignments, showInstitute }: { assignments: Assignments; showInstitute: boolean }) {
-  // Carried-forward years show 0 here: their dues live on the newer year, and
-  // listing both would count the same money twice.
-  const rows = assignments
-    .filter((a) => assignmentBalance(a) > 0)
-    .map((a) => {
-      const s = store.students.get(a.studentId);
-      const cls = s ? store.classes.get(s.classId) : undefined;
-      return {
-        id: a.id,
-        instituteId: a.instituteId,
-        name: s?.name ?? "",
-        adm: s?.admissionNo ?? "",
-        cls: cls?.name ?? "",
-        balance: assignmentBalance(a),
-        status: a.status,
-      };
-    })
-    .sort((a, b) => b.balance - a.balance);
-  const total = rows.reduce((s, r) => s + r.balance, 0);
+function ClassWise({ assignments, showInstitute }: { assignments: Assignments; showInstitute: boolean }) {
+  const { rows: students } = studentHeadRows(assignments);
+  const rows = classRows(students, showInstitute);
   return (
     <>
-      <SummaryLine label="Total outstanding" value={formatCurrency(total)} />
-      <DataTable rowKey={(r) => r.id} rows={rows} empty="Nothing pending — great!"
+      <SummaryLine label="Total outstanding" value={formatCurrency(sum(rows, (r) => r.balance))} />
+      <DataTable rowKey={(r) => r.id} rows={rows} empty="No fees assigned"
         columns={[
           ...instituteColumn<(typeof rows)[number]>(showInstitute),
-          { key: "adm", header: "Admission #", render: (r) => <span className="font-mono text-xs">{r.adm}</span> },
-          { key: "name", header: "Student", render: (r) => <span className="font-medium">{r.name}</span> },
-          { key: "cls", header: "Class", render: (r) => r.cls },
-          { key: "bal", header: "Balance", render: (r) => <span className="text-amber-600 font-semibold">{formatCurrency(r.balance)}</span> },
-          { key: "status", header: "Status", render: (r) => <Badge tone={r.status === "PARTIAL" ? "info" : "warning"}>{r.status}</Badge> },
+          { key: "cls", header: "Class", render: (r) => <span className="font-medium">{r.className}</span>, footer: "Total" },
+          { key: "st", header: "Students", render: (r) => r.students, footer: sum(rows, (r) => r.students) },
+          { key: "pst", header: "With dues", render: (r) => r.pendingStudents, footer: sum(rows, (r) => r.pendingStudents) },
+          { key: "pay", header: "Payable", render: (r) => formatCurrency(r.payable), footer: formatCurrency(sum(rows, (r) => r.payable)) },
+          { key: "rec", header: "Received", render: (r) => <span className="text-emerald-600">{formatCurrency(r.received)}</span>, footer: formatCurrency(sum(rows, (r) => r.received)) },
+          { key: "bal", header: "Balance", render: (r) => <span className="font-semibold text-amber-600">{formatCurrency(r.balance)}</span>, footer: formatCurrency(sum(rows, (r) => r.balance)) },
+          { key: "heads", header: "Pending by head", render: (r) => <HeadList byHead={r.pendingByHead} /> },
         ]}
       />
     </>
   );
 }
+
+/** Register-style sheet: one row per student, one column per fee head received. */
+function StudentWise({ assignments, showInstitute }: { assignments: Assignments; showInstitute: boolean }) {
+  const { heads, rows } = studentHeadRows(assignments);
+  const receivedHeads = heads.filter((h) => rows.some((r) => r.receivedByHead[h]));
+  const numbered = rows.map((r, i) => ({ ...r, sr: i + 1 }));
+  return (
+    <>
+      <p className="mb-2 text-xs text-[var(--color-fg-muted)]">Head columns show the amount received against each fee head.</p>
+      <DataTable rowKey={(r) => r.id} rows={numbered} empty="No students"
+        columns={[
+          { key: "sr", header: "Sr", render: (r) => r.sr },
+          ...instituteColumn<(typeof numbered)[number]>(showInstitute),
+          { key: "cls", header: "Class", render: (r) => r.className },
+          { key: "name", header: "Student", render: (r) => (
+            <div><div className="font-medium">{r.name}</div><div className="font-mono text-xs text-[var(--color-fg-muted)]">{r.adm}</div></div>
+          ), footer: "Total" },
+          { key: "pay", header: "Payable", render: (r) => formatCurrency(r.payable), footer: formatCurrency(sum(rows, (r) => r.payable)) },
+          ...receivedHeads.map((h) => ({
+            key: `h:${h}`, header: h,
+            render: (r: StudentHeadRow) => money(r.receivedByHead[h] ?? 0),
+            footer: formatCurrency(sum(rows, (r) => r.receivedByHead[h] ?? 0)),
+          })),
+          { key: "rec", header: "Received", render: (r) => <span className="text-emerald-600">{formatCurrency(r.received)}</span>, footer: formatCurrency(sum(rows, (r) => r.received)) },
+          { key: "bal", header: "Balance", render: (r) => <span className="font-semibold text-amber-600">{formatCurrency(r.balance)}</span>, footer: formatCurrency(sum(rows, (r) => r.balance)) },
+        ]}
+      />
+    </>
+  );
+}
+
+function HeadWise({ assignments }: { assignments: Assignments }) {
+  const { heads, rows: students } = studentHeadRows(assignments);
+  const rows = headRows(heads, students);
+  return (
+    <>
+      <SummaryLine label="Pending across all heads" value={formatCurrency(sum(rows, (r) => r.pending))} />
+      <DataTable rowKey={(r) => r.head} rows={rows} empty="No fee heads"
+        columns={[
+          { key: "head", header: "Fee head", render: (r) => <span className="font-medium">{r.head}</span>, footer: "Total" },
+          { key: "chg", header: "Charged", render: (r) => money(r.charged), footer: formatCurrency(sum(rows, (r) => r.charged)) },
+          { key: "rec", header: "Received", render: (r) => <span className="text-emerald-600">{money(r.received)}</span>, footer: formatCurrency(sum(rows, (r) => r.received)) },
+          { key: "pend", header: "Pending", render: (r) => <span className="font-semibold text-amber-600">{money(r.pending)}</span>, footer: formatCurrency(sum(rows, (r) => r.pending)) },
+          { key: "st", header: "Students pending", render: (r) => r.students || "—" },
+        ]}
+      />
+      <p className="mt-2 text-xs text-[var(--color-fg-muted)]">
+        Charged is before discounts. &quot;Unallocated&quot; is money received on receipts that were not split by head.
+      </p>
+    </>
+  );
+}
+
+/** Students with dues, grouped class by class with the heads still owed. */
+function Pending({ assignments, showInstitute }: { assignments: Assignments; showInstitute: boolean }) {
+  const { rows: all } = studentHeadRows(assignments);
+  const rows = all.filter((r) => r.balance > 0);
+  const classes = classRows(rows, showInstitute);
+  const total = sum(rows, (r) => r.balance);
+  return (
+    <>
+      <SummaryLine label="Total outstanding" value={formatCurrency(total)} />
+      {rows.length === 0 && (
+        <p className="py-16 text-center text-sm text-[var(--color-fg-muted)]">Nothing pending — great!</p>
+      )}
+      <div className="flex flex-col gap-6">
+        {classes.map((c) => {
+          const list = rows.filter((r) => (showInstitute ? `${r.classId}|${r.instituteId}` : r.classId) === c.id);
+          return (
+            <section key={c.id}>
+              <h3 className="mb-2 flex flex-wrap items-baseline gap-x-3 text-sm font-semibold">
+                {showInstituteName(c.instituteId, c.className, showInstitute)}
+                <span className="text-xs font-normal text-[var(--color-fg-muted)]">
+                  {list.length} student{list.length === 1 ? "" : "s"} · {formatCurrency(c.balance)} pending
+                </span>
+              </h3>
+              <DataTable rowKey={(r) => r.id} rows={list} empty="—"
+                columns={[
+                  { key: "adm", header: "Admission #", render: (r) => <span className="font-mono text-xs">{r.adm}</span> },
+                  { key: "name", header: "Student", render: (r) => <span className="font-medium">{r.name}</span>, footer: "Class total" },
+                  { key: "pay", header: "Payable", render: (r) => formatCurrency(r.payable), footer: formatCurrency(c.payable) },
+                  { key: "rec", header: "Received", render: (r) => formatCurrency(r.received), footer: formatCurrency(c.received) },
+                  { key: "bal", header: "Balance", render: (r) => <span className="font-semibold text-amber-600">{formatCurrency(r.balance)}</span>, footer: formatCurrency(c.balance) },
+                  { key: "heads", header: "Pending heads", render: (r) => <HeadList byHead={r.pendingByHead} /> },
+                ]}
+              />
+            </section>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 
 /**
  * Every concession granted, from both places one can be given: a flat discount

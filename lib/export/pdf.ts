@@ -8,8 +8,10 @@ export interface PdfTableOptions {
   footer?: string;
 }
 
-const PAGE_W = 595.28; // A4 in pt
-const PAGE_H = 841.89;
+const A4_W = 595.28; // A4 in pt
+const A4_H = 841.89;
+const PAGE_W = A4_W;
+const PAGE_H = A4_H;
 const MARGIN = 40;
 const LINE_H = 16;
 
@@ -33,6 +35,14 @@ export function pdfSafe(text: string): string {
     .replace(/[^\x00-\xFF]/g, "?");
 }
 
+/** Shortens text with "..." so it fits within maxW at the given size. */
+export function fitText(text: string, font: PDFFont, size: number, maxW: number): string {
+  let t = pdfSafe(text);
+  if (font.widthOfTextAtSize(t, size) <= maxW) return t;
+  while (t.length > 1 && font.widthOfTextAtSize(`${t}...`, size) > maxW) t = t.slice(0, -1);
+  return `${t}...`;
+}
+
 function drawText(page: PDFPage, text: string, x: number, y: number, font: PDFFont, size = 10, color = rgb(0.1, 0.11, 0.14)) {
   page.drawText(pdfSafe(String(text ?? "")), { x, y, size, font, color });
 }
@@ -40,6 +50,11 @@ function drawText(page: PDFPage, text: string, x: number, y: number, font: PDFFo
 export async function renderTablePdf(opts: PdfTableOptions): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const { regular, bold } = await fonts(pdf);
+  // Wide tables (many fee-head columns) go landscape.
+  const natural = opts.columns.reduce((s, c) => s + c.width, 0);
+  const landscape = natural > A4_W - MARGIN * 2 + 40;
+  const PAGE_W = landscape ? A4_H : A4_W;
+  const PAGE_H = landscape ? A4_W : A4_H;
   let page = pdf.addPage([PAGE_W, PAGE_H]);
   let y = PAGE_H - MARGIN;
 
@@ -52,16 +67,16 @@ export async function renderTablePdf(opts: PdfTableOptions): Promise<Uint8Array>
   drawText(page, `Generated ${new Date().toISOString().slice(0, 19).replace("T", " ")}`, MARGIN, y, regular, 8, rgb(0.5, 0.52, 0.58));
   y -= 22;
 
-  const totalW = opts.columns.reduce((s, c) => s + c.width, 0);
-  const scale = (PAGE_W - MARGIN * 2) / totalW;
+  const scale = (PAGE_W - MARGIN * 2) / natural;
   const widths = opts.columns.map((c) => c.width * scale);
 
   const drawHeader = () => {
     page.drawRectangle({ x: MARGIN, y: y - 4, width: PAGE_W - MARGIN * 2, height: LINE_H + 2, color: rgb(0.95, 0.96, 0.98) });
     let x = MARGIN + 6;
     opts.columns.forEach((c, i) => {
-      const tx = c.align === "right" ? x + widths[i] - 12 - bold.widthOfTextAtSize(pdfSafe(String(c.header)), 9) : x;
-      drawText(page, c.header, tx, y, bold, 9, rgb(0.35, 0.38, 0.45));
+      const label = fitText(String(c.header), bold, 9, widths[i] - 8);
+      const tx = c.align === "right" ? x + widths[i] - 12 - bold.widthOfTextAtSize(label, 9) : x;
+      drawText(page, label, tx, y, bold, 9, rgb(0.35, 0.38, 0.45));
       x += widths[i];
     });
     y -= LINE_H + 4;
@@ -76,11 +91,13 @@ export async function renderTablePdf(opts: PdfTableOptions): Promise<Uint8Array>
     }
     let x = MARGIN + 6;
     row.forEach((cell, i) => {
-      const text = String(cell ?? "");
       const col = opts.columns[i];
-      const w = regular.widthOfTextAtSize(pdfSafe(String(text)), 9);
+      if (!col) return;
+      const isTotal = String(row.find((c) => c !== "") ?? "") === "TOTAL";
+      const text = fitText(String(cell ?? ""), isTotal ? bold : regular, 9, widths[i] - 8);
+      const w = (isTotal ? bold : regular).widthOfTextAtSize(text, 9);
       const tx = col.align === "right" ? x + widths[i] - 12 - w : x;
-      drawText(page, text, tx, y, regular, 9);
+      drawText(page, text, tx, y, isTotal ? bold : regular, 9);
       x += widths[i];
     });
     y -= LINE_H;

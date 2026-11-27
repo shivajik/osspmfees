@@ -60,10 +60,13 @@ export default async function BatchesPage({
 
 
   const sp = await searchParams;
-  const params = parseListParams(sp, { filterKeys: user.instituteId ? [] : ["instituteId"] });
+  const params = parseListParams(sp, { filterKeys: user.instituteId ? ["class", "year"] : ["instituteId", "class", "year"] });
   const q = params.q.toLowerCase();
+  // Class / year filter by name so it also works across institutes for super admins.
   const filtered = sorted.filter((r) => {
     if (params.filters.instituteId && r.instituteId !== params.filters.instituteId) return false;
+    if (params.filters.class && normalizeClassName(className(r.classId)) !== params.filters.class) return false;
+    if (params.filters.year && (store.academicYears.get(r.academicYearId)?.name ?? "").trim().toLowerCase() !== params.filters.year) return false;
     if (!q) return true;
     return r.name.toLowerCase().includes(q) || className(r.classId).toLowerCase().includes(q);
   });
@@ -83,7 +86,11 @@ export default async function BatchesPage({
       />
       <ListToolbar
         placeholder="Search by division or class…"
-        filters={user.instituteId ? [] : [{ key: "instituteId", label: "Institute", options: instituteOptions.map((i) => ({ value: i.id, label: i.name })) }]}
+        filters={[
+          ...(user.instituteId ? [] : [{ key: "instituteId", label: "Institute", options: instituteOptions.map((i) => ({ value: i.id, label: i.name })) }]),
+          { key: "class", label: "Class", options: classes.map((c) => ({ value: normalizeClassName(c.name), label: normalizeClassName(c.name) })) },
+          { key: "year", label: "Academic year", options: years.map((y) => ({ value: y.name.trim().toLowerCase(), label: y.name })) },
+        ]}
       />
       <DataTable
         rowKey={(r) => r.id}
