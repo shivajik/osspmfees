@@ -284,6 +284,13 @@ export async function reversePayment(fd: FormData): Promise<{ error?: string } |
 
   assn.totalPaid -= settled;
   if (pay.discount) assn.collectionDiscount = Math.max(0, (assn.collectionDiscount ?? 0) - pay.discount);
+  // "Other fees" typed on this receipt were charged only because they were paid
+  // here — reversing the receipt removes those charges too, so no false dues remain.
+  const counterCharges = (assn.extraItems ?? []).filter((e) => e.reason === `Collected on receipt ${pay.receiptNo}`);
+  if (counterCharges.length) {
+    assn.extraItems = (assn.extraItems ?? []).filter((e) => !counterCharges.includes(e));
+    assn.totalPayable = Math.max(0, assn.totalPayable - counterCharges.reduce((sum, e) => sum + e.amount, 0));
+  }
   assn.status = assignmentStatusFor(assn);
   assn.updatedAt = now;
 
