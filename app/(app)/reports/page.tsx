@@ -410,12 +410,25 @@ function Pending({ assignments, showInstitute }: { assignments: Assignments; sho
         <p className="py-16 text-center text-sm text-[var(--color-fg-muted)]">Nothing pending — great!</p>
       )}
       <div className="flex flex-col gap-6">
-        {classes.map((c) => {
+        {classes
+          .sort((x, y) => (showInstitute ? instituteName(x.instituteId).localeCompare(instituteName(y.instituteId)) : 0) || compareClassNames(x.className, y.className))
+          .map((c, i, arr) => {
           const list = rows.filter((r) => (showInstitute ? `${r.classId}|${r.instituteId}` : r.classId) === c.id);
+          // School name once, as a heading above its first class.
+          const firstOfSchool = showInstitute && (i === 0 || arr[i - 1].instituteId !== c.instituteId);
+          const school = classes.filter((x) => x.instituteId === c.instituteId);
           return (
             <section key={c.id}>
+              {firstOfSchool && (
+                <h2 className="mb-3 mt-4 flex flex-wrap items-baseline gap-x-3 border-b border-[var(--color-border)] pb-2 text-lg font-semibold">
+                  {instituteName(c.instituteId)}
+                  <span className="text-sm font-normal text-[var(--color-fg-muted)]">
+                    {formatCurrency(sum(school, (x) => x.balance))} pending
+                  </span>
+                </h2>
+              )}
               <h3 className="mb-2 flex flex-wrap items-baseline gap-x-3 text-sm font-semibold">
-                {showInstituteName(c.instituteId, c.className, showInstitute)}
+                {c.className}
                 <span className="text-xs font-normal text-[var(--color-fg-muted)]">
                   {list.length} student{list.length === 1 ? "" : "s"} · {formatCurrency(c.balance)} pending
                 </span>

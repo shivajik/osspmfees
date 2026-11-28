@@ -27,21 +27,52 @@ function core(raw: string): string {
     .trim();
 }
 
+/** Streams offered in classes 11 and 12. */
+export const STREAMS = [
+  "Arts", "Commerce", "Science",
+  "Medical", "Non-Medical", "Medical & Non-Medical",
+  "Vocational",
+] as const;
+
+/** Matches a stream at the end of a class name ("Class 11 Non-Medical" → "Non-Medical"). */
+export const STREAM_SUFFIX = new RegExp(
+  `\\s(${[...STREAMS]
+    .sort((a, b) => b.length - a.length)
+    .map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|")})$`,
+  "i",
+);
+
+/** Splits "11th Arts" / "XI Science" / "Class 12 Commerce" into level + stream. */
+function parseLevel(raw: string): { level: number; stream: string } | null {
+  const c = core(raw);
+  const m = c.match(/^(\d{1,2}|[ivx]{1,4})\.?\s*(st|nd|rd|th)?\.?(?:\s*[-–(]?\s*(.+?)\)?)?$/i);
+  if (!m) return null;
+  const level = /^\d/.test(m[1]) ? Number(m[1]) : ROMAN[m[1].toLowerCase()];
+  if (!level) return null;
+  const rest = (m[3] ?? "").trim();
+  if (!rest) return { level, stream: "" };
+  const stream = STREAMS.find((st) => st.toLowerCase() === rest.toLowerCase());
+  // Only a known stream counts; anything else is not a numbered class.
+  return stream ? { level, stream } : null;
+}
+
 /** Numeric level of a class name, or null when it is not a numbered class. */
 export function classLevel(raw: string): number | null {
-  const c = core(raw);
-  const digits = c.match(/^(\d{1,2})\s*(st|nd|rd|th)?$/i);
-  if (digits) return Number(digits[1]);
-  const roman = ROMAN[c.toLowerCase().replace(/\.$/, "")];
-  return roman ?? null;
+  return parseLevel(raw)?.level ?? null;
+}
+
+/** Stream of a class ("Arts", "Science"…), or "" when it has none. */
+export function classStream(raw: string): string {
+  return parseLevel(raw)?.stream ?? "";
 }
 
 /** Single display standard: regular numbers ("Class 8"), tidy pre-primary labels. */
 export function normalizeClassName(raw: string): string {
   const c = core(raw);
   for (const p of PRE_PRIMARY) if (p.match.test(c)) return p.label;
-  const level = classLevel(raw);
-  if (level !== null) return `Class ${level}`;
+  const parsed = parseLevel(raw);
+  if (parsed) return parsed.stream ? `Class ${parsed.level} ${parsed.stream}` : `Class ${parsed.level}`;
   return c || raw;
 }
 
