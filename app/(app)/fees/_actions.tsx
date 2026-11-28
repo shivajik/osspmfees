@@ -754,6 +754,9 @@ export function SetStudentFeeButton({
             </Field>
           </div>
           <HeadsEditor defaultHead="Tuition fee" />
+          <Field label="Previous year balance (₹)" hint="Old dues from last year, if any — collected first">
+            <Input name="previousBalance" type="number" inputMode="numeric" min="0" step="1" defaultValue={0} />
+          </Field>
           <Field label="Already paid (₹)" hint="Leave 0 if nothing paid yet"><Input name="paid" type="number" inputMode="numeric" min="0" step="1" defaultValue={0} /></Field>
           <Field label="Paid by">
             <Select name="mode" defaultValue="CASH">

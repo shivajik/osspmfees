@@ -5,7 +5,7 @@ import { PERMISSIONS, hasPermission, permissionsForRole } from "@/lib/auth/rbac"
 import {
   pushAudit, store, nextReceiptNo,
   assignmentYearId, assignmentBalance, assignmentStatusFor, openPriorAssignments,
-  baseFees, extraChargesTotal, conditionalHeadsCharged, assignmentHeadOutstanding, assignmentPayments, isActivePayment,
+  baseFees, extraChargesTotal, assignmentFees, conditionalHeadsCharged, assignmentHeadOutstanding, assignmentPayments, isActivePayment,
   type ChequeDetails,
 } from "@/lib/db/store";
 import { autoAllocate, duplicateHead, parsePaymentDate, splitSettlement, validateAllocation } from "@/lib/fees/rules";
@@ -47,6 +47,8 @@ const collectSchema = z.object({
   accountId: z.string().min(1),
   feeHead: z.string().max(300).optional().or(z.literal("")),
   feeHeads: z.string().max(2000).optional().or(z.literal("")),
+  /** Extra heads charged and paid in full on this receipt, e.g. [{"head":"ID card","amount":50}]. */
+  otherFees: z.string().max(2000).optional().or(z.literal("")),
   reference: z.string().max(80).optional().or(z.literal("")),
   /** Date the money was received (YYYY-MM-DD); blank = now. */
   paidOn: z.string().max(10).optional().or(z.literal("")),
@@ -62,7 +64,25 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
   const parsed = collectSchema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
   const { assignmentId, amount, discount, discountReason, mode, accountId, reference, feeHead } = parsed.data;
-  if (amount + discount <= 0) return { error: "Enter an amount received or a discount" };
+
+  // "Other fees" typed at the counter: charged to the student and paid in full now.
+  let otherFees: { head: string; amount: number }[];
+  try {
+    const raw = JSON.parse(parsed.data.otherFees || "[]") as { head?: unknown; amount?: unknown }[];
+    otherFees = (Array.isArray(raw) ? raw : [])
+      .map((r) => ({ head: String(r.head ?? "").trim().replace(/\s+/g, " ").slice(0, 60), amount: Number(r.amount) }))
+      .filter((r) => r.head || r.amount);
+  } catch {
+    return { error: "Invalid other fees" };
+  }
+  for (const o of otherFees) {
+    if (o.head.length < 2) return { error: "Type a name for each other fee" };
+    if (!Number.isInteger(o.amount) || o.amount <= 0) return { error: `Enter a whole-rupee amount for ${o.head}` };
+  }
+  const otherDup = duplicateHead(otherFees);
+  if (otherDup) return { error: duplicateError(otherDup) };
+  const otherTotal = otherFees.reduce((sum, o) => sum + o.amount, 0);
+  if (amount + discount + otherTotal <= 0) return { error: "Enter an amount received or a discount" };
 
   const assn = store.feeAssignments.get(assignmentId);
   if (!assn || assn.instituteId !== user.instituteId) return { error: "Assignment not found" };
@@ -89,12 +109,33 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
     return { error: "Invalid fee head selection" };
   }
   const settled = amount + discount;
-  const allocationError = validateAllocation(feeHeadBreakup, assignmentHeadOutstanding(assn), settled);
-  if (allocationError) return { error: allocationError };
+  const outstanding = assignmentHeadOutstanding(assn);
+  if (settled > 0 || feeHeadBreakup.length) {
+    const allocationError = validateAllocation(feeHeadBreakup, outstanding, settled);
+    if (allocationError) return { error: allocationError };
+  }
+  const existingHeads = new Set([
+    ...assignmentFees(assn).items.map((i) => i.head.toLowerCase()),
+    ...outstanding.map((h) => h.head.toLowerCase()),
+  ]);
+  const clash = otherFees.find((o) => existingHeads.has(o.head.toLowerCase()));
+  if (clash) return { error: `${clash.head} is already a fee head for this student — collect it in the heads list above` };
 
   const now = new Date().toISOString();
   const paymentId = uid("pay");
   const receiptNo = nextReceiptNo();
+
+  if (otherTotal > 0) {
+    assn.extraItems = [
+      ...(assn.extraItems ?? []),
+      ...otherFees.map((o) => ({
+        id: uid("chg"), head: o.head, amount: o.amount, reason: `Collected on receipt ${receiptNo}`,
+        addedAt: now, addedBy: user.id, addedByName: user.name,
+      })),
+    ];
+    assn.totalPayable += otherTotal;
+  }
+  const received = amount + otherTotal;
 
   // Payments (and counter discounts) settle carried-forward previous balance
   // first, then the current year's fees.
@@ -104,10 +145,10 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
   store.feePayments.set(paymentId, {
     id: paymentId, instituteId: user.instituteId,
     assignmentId, studentId: assn.studentId,
-    receiptNo, amount, mode, accountId,
-    feeHead: feeHead || feeHeadBreakup.map((h) => h.head).join(", "),
-    feeHeadBreakup,
-    appliedToPrevious, appliedToCurrent,
+    receiptNo, amount: received, mode, accountId,
+    feeHead: [feeHead || feeHeadBreakup.map((h) => h.head).join(", "), ...otherFees.map((o) => o.head)].filter(Boolean).join(", "),
+    feeHeadBreakup: [...feeHeadBreakup, ...otherFees],
+    appliedToPrevious, appliedToCurrent: appliedToCurrent + otherTotal,
     discount: discount > 0 ? discount : undefined,
     discountBy: discount > 0 ? user.id : undefined,
     discountByName: discount > 0 ? user.name : undefined,
@@ -117,18 +158,18 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
     createdBy: user.id, createdByName: user.name,
   });
 
-  assn.totalPaid += settled;
+  assn.totalPaid += settled + otherTotal;
   if (discount > 0) assn.collectionDiscount = (assn.collectionDiscount ?? 0) + discount;
   assn.status = assignmentStatusFor(assn);
   assn.updatedAt = now;
 
   // Only real money hits the account ledger — discounts never do.
-  if (amount > 0) {
-    account.currentBal += amount;
+  if (received > 0) {
+    account.currentBal += received;
     const txnId = uid("txn");
     store.transactions.set(txnId, {
       id: txnId, instituteId: user.instituteId, accountId,
-      direction: "CREDIT", amount, balanceAfter: account.currentBal,
+      direction: "CREDIT", amount: received, balanceAfter: account.currentBal,
       reference: `Fee ${receiptNo}`, paymentId, occurredAt: paidOn.iso!, createdAt: now,
     });
   }
@@ -136,7 +177,7 @@ export async function collectFee(fd: FormData): Promise<{ error?: string; paymen
   pushAudit({
     instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
     action: "fee.collect", entity: "FeePayment", entityId: paymentId,
-    meta: { amount, discount, discountReason: discountReason || null, mode, feeHead: feeHead ?? null, receiptNo, appliedToPrevious, appliedToCurrent, paidAt: paidOn.iso },
+    meta: { amount: received, otherFees: otherFees.length ? otherFees : null, discount, discountReason: discountReason || null, mode, feeHead: feeHead ?? null, receiptNo, appliedToPrevious, appliedToCurrent, paidAt: paidOn.iso },
   });
   await saveStore();
   return { paymentId };
@@ -243,6 +284,13 @@ export async function reversePayment(fd: FormData): Promise<{ error?: string } |
 
   assn.totalPaid -= settled;
   if (pay.discount) assn.collectionDiscount = Math.max(0, (assn.collectionDiscount ?? 0) - pay.discount);
+  // "Other fees" typed on this receipt were charged only because they were paid
+  // here — reversing the receipt removes those charges too, so no false dues remain.
+  const counterCharges = (assn.extraItems ?? []).filter((e) => e.reason === `Collected on receipt ${pay.receiptNo}`);
+  if (counterCharges.length) {
+    assn.extraItems = (assn.extraItems ?? []).filter((e) => !counterCharges.includes(e));
+    assn.totalPayable = Math.max(0, assn.totalPayable - counterCharges.reduce((sum, e) => sum + e.amount, 0));
+  }
   assn.status = assignmentStatusFor(assn);
   assn.updatedAt = now;
 
@@ -816,6 +864,8 @@ const setFeeSchema = z.object({
   items: z.string().max(2000).optional().or(z.literal("")),
   /** Single amount, used when no heads are sent. */
   amount: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
+  /** Dues from earlier years not recorded in the app (typed by the school). */
+  previousBalance: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
   /** Money the student has already handed over (e.g. at admission). */
   paid: z.coerce.number().int().min(0).max(10_000_000).optional().default(0),
   mode: z.enum(["CASH", "BANK", "CARD", "UPI", "CHEQUE", "ONLINE"]).optional().default("CASH"),
@@ -834,7 +884,7 @@ export async function setStudentFee(fd: FormData): Promise<{ error?: string; ass
 
   const parsed = setFeeSchema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
-  const { studentId, paid, mode } = parsed.data;
+  const { studentId, paid, mode, previousBalance: manualPrevious } = parsed.data;
   const heads = parsed.data.items
     ? parseItems(parsed.data.items, 0).filter((i) => i.amount > 0)
     : parsed.data.amount > 0 ? [{ head: "Tuition fee", amount: parsed.data.amount }] : [];
@@ -852,7 +902,7 @@ export async function setStudentFee(fd: FormData): Promise<{ error?: string; ass
 
   // Validate the payment part up front so we never save half of the request.
   const priorDue = openPriorAssignments(student.id, year.id).reduce((s, a) => s + assignmentBalance(a), 0);
-  if (paid > amount + priorDue) return { error: "Already-paid amount is more than the fee" };
+  if (paid > amount + priorDue + manualPrevious) return { error: "Already-paid amount is more than the fee" };
   if (paid > 0 && mode === "CHEQUE") return { error: "Record cheque payments from the collection screen (cheque details are needed)" };
   const accounts = Array.from(store.accounts.values()).filter((a) => a.instituteId === user.instituteId);
   const account = accounts.find((a) => a.type === (mode === "CASH" ? "CASH" : "BANK")) ?? accounts[0];
@@ -866,9 +916,20 @@ export async function setStudentFee(fd: FormData): Promise<{ error?: string; ass
   setup.set("carryForward", "on");
   const created = await setupStudentFees(setup);
   if (created.error || !created.assignmentId) return { error: created.error ?? "Could not save the fee" };
-  if (paid <= 0) return { assignmentId: created.assignmentId };
-
   const assn = store.feeAssignments.get(created.assignmentId)!;
+  if (manualPrevious > 0) {
+    assn.previousBalance = (assn.previousBalance ?? 0) + manualPrevious;
+    assn.status = assignmentStatusFor(assn);
+    assn.updatedAt = new Date().toISOString();
+    pushAudit({
+      instituteId: user.instituteId, actorId: user.id, actorEmail: user.email,
+      action: "fee_assignment.previous_balance", entity: "FeeAssignment", entityId: assn.id,
+      meta: { previousBalance: manualPrevious, studentId: student.id },
+    });
+    await saveStore();
+  }
+  if (paid <= 0) return { assignmentId: assn.id };
+
   const pay = new FormData();
   pay.set("assignmentId", assn.id);
   pay.set("amount", String(paid));

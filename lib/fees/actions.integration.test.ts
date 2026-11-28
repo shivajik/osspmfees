@@ -373,3 +373,51 @@ test("fee structure total always equals its heads", async () => {
   const fs = Array.from(store.feeStructures.values()).find((f) => f.name === "Grade 9")!;
   assert.equal(fs.totalAmount, 4300);
 });
+
+// --- Other fees typed at the counter --------------------------------------------
+
+test("other fees: charged and paid on one receipt, cash and dues stay right, reversal removes them", async () => {
+  const a = await assignCurrent();
+  const r = await collect(a.id, [{ head: "Admission fee", amount: 1000 }], {
+    otherFees: JSON.stringify([{ head: "ID card", amount: 50 }, { head: "Uniform", amount: 800 }]),
+  });
+  assert.ok(r.paymentId, r.error);
+  const p = store.feePayments.get(r.paymentId!)!;
+  assert.equal(p.amount, 1850);
+  assert.equal(cash(), 1850);
+  assert.equal(a.totalPayable, 6850);
+  assert.equal(a.totalPaid, 1850);
+  assert.equal(S.assignmentBalance(a), 5000);
+  assert.deepEqual(S.assignmentHeadOutstanding(a).filter((h) => h.head === "ID card" || h.head === "Uniform").map((h) => h.amount), [0, 0]);
+
+  // same other fee again, or one that clashes with a structure head, is refused
+  assert.match((await collect(a.id, [], { otherFees: JSON.stringify([{ head: "id card", amount: 50 }]) })).error ?? "", /already a fee head/);
+  assert.match((await collect(a.id, [], { otherFees: JSON.stringify([{ head: "X", amount: 5 }]) })).error ?? "", /name/);
+
+  const rev = await A.reversePayment(fd({ paymentId: p.id, reason: "wrong entry" }));
+  assert.equal(rev?.error, undefined);
+  assert.equal(cash(), 0);
+  assert.equal(a.totalPaid, 0);
+  assert.equal(a.totalPayable, 6000);
+  assert.equal(S.assignmentBalance(a), 6000);
+});
+
+test("other fees can be collected from a fully paid student", async () => {
+  const a = await assignCurrent();
+  await collect(a.id, [{ head: "Admission fee", amount: 5000 }, { head: "I unit test", amount: 300 }, { head: "I term exam", amount: 700 }]);
+  assert.equal(S.assignmentBalance(a), 0);
+  const r = await A.collectFee(fd({ assignmentId: a.id, amount: 0, mode: "CASH", accountId: "cash_inst_a", feeHeads: "[]", otherFees: JSON.stringify([{ head: "TC fees", amount: 200 }]) }));
+  assert.ok(r.paymentId, r.error);
+  assert.equal(cash(), 6200);
+  assert.equal(S.assignmentBalance(a), 0);
+  assert.equal(a.status, "PAID");
+});
+
+test("set fee with a typed previous-year balance: it is due and settled first", async () => {
+  const r = await A.setStudentFee(fd({ studentId: "s2", academicYearId: "ay_cur", items: "Tuition fee:3000", previousBalance: 1200, paid: 1000, mode: "CASH" }));
+  assert.ok(r.paymentId, r.error);
+  const a = store.feeAssignments.get(r.assignmentId!)!;
+  assert.equal(a.previousBalance, 1200);
+  assert.equal(S.assignmentBalance(a), 3200);
+  assert.equal(S.previousDue(a), 200);
+});

@@ -69,3 +69,27 @@ export function ParamFilter({
     </select>
   );
 }
+
+/** URL-backed date picker (YYYY-MM-DD) for the receipt-wise report. */
+export function DateParam({ param, label, value }: { param: string; label: string; value: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+  return (
+    <label className="flex items-center gap-1.5 text-sm text-[var(--color-fg-muted)]">
+      {label}
+      <input
+        type="date"
+        value={value}
+        disabled={isPending}
+        onChange={(e) => {
+          const params = new URLSearchParams(sp.toString());
+          params.set(param, e.target.value);
+          startTransition(() => router.push(`${pathname}?${params.toString()}`));
+        }}
+        className="h-9 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-fg)] outline-none focus:border-[var(--color-brand)] disabled:opacity-60"
+      />
+    </label>
+  );
+}

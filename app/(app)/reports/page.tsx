@@ -9,7 +9,8 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { Download } from "lucide-react";
-import { InstituteFilter, ParamFilter } from "./_filters";
+import { DateParam, InstituteFilter, ParamFilter } from "./_filters";
+import { receiptRows, todayIST } from "@/lib/reports/receipts";
 import {
   classRows, compareClassNames, filterAssignments, headRows, studentHeadRows,
   type StudentHeadRow,
@@ -18,10 +19,11 @@ import {
 /** Tabs built from fee assignments — these honour the class / year filters. */
 const FEE_TABS: Tab[] = ["classwise", "student", "headwise", "pending", "discount"];
 
-type Tab = "daily" | "monthly" | "classwise" | "student" | "headwise" | "pending" | "discount" | "expense" | "cashbook" | "bank";
+type Tab = "daily" | "receipts" | "monthly" | "classwise" | "student" | "headwise" | "pending" | "discount" | "expense" | "cashbook" | "bank";
 
 const TABS: { key: Tab; label: string; needs?: string }[] = [
   { key: "daily", label: "Daily collection" },
+  { key: "receipts", label: "Daily detailed (receipts)" },
   { key: "monthly", label: "Monthly collection" },
   { key: "classwise", label: "Class-wise" },
   { key: "student", label: "Student-wise" },
@@ -99,6 +101,9 @@ export default async function ReportsPage({
     .map((y) => ({ id: y.id, name: showInstituteName(y.instituteId, y.name, !scope) }))
     .sort((a, b) => b.name.localeCompare(a.name));
   const feeTab = FEE_TABS.includes(tab);
+  // Receipt-wise report: defaults to today when no dates are picked.
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(pick("from")) ? pick("from") : todayIST();
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(pick("to")) ? pick("to") : from;
   const txns = scopeByInstitute(store.transactions.values(), scope);
   const accounts = scopeByInstitute(store.accounts.values(), scope);
 
@@ -107,6 +112,7 @@ export default async function ReportsPage({
       ...(chosen ? { instituteId: chosen } : {}),
       ...(classId ? { classId } : {}),
       ...(yearId ? { yearId } : {}),
+      ...(tab === "receipts" || extra.tab === "receipts" ? { from, to } : {}),
       ...extra,
     }).toString();
 
@@ -146,6 +152,13 @@ export default async function ReportsPage({
       </div>
 
       {instituteOptions.length > 0 && <InstituteFilter institutes={instituteOptions} />}
+      {tab === "receipts" && (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <DateParam param="from" label="From" value={from} />
+          <DateParam param="to" label="To" value={to} />
+          <ParamFilter param="classId" allLabel="Class: All" options={classOptions} />
+        </div>
+      )}
       {feeTab && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <ParamFilter param="classId" allLabel="Class: All" options={classOptions} />
@@ -154,6 +167,7 @@ export default async function ReportsPage({
       )}
 
       {tab === "daily" && <Daily payments={payments} showInstitute={showInstitute} />}
+      {tab === "receipts" && <Receipts scope={scope} from={from} to={to} classId={classId} showInstitute={showInstitute} />}
       {tab === "monthly" && <Monthly payments={payments} showInstitute={showInstitute} />}
       {tab === "classwise" && <ClassWise assignments={assignments} showInstitute={showInstitute} />}
       {tab === "student" && <StudentWise assignments={assignments} showInstitute={showInstitute} />}
@@ -222,6 +236,49 @@ function Daily({ payments, showInstitute }: { payments: Payments; showInstitute:
           { key: "count", header: "Receipts", render: (r) => r.count },
           { key: "by", header: "Collected by", render: (r) => <Collectors people={r.collectors} /> },
           { key: "total", header: "Amount", render: (r) => <span className="font-semibold">{formatCurrency(r.total)}</span> },
+        ]}
+      />
+    </>
+  );
+}
+
+/** Every receipt in the date range — who paid, receipt no., heads, mode, collector. */
+function Receipts({ scope, from, to, classId, showInstitute }: {
+  scope: string | null; from: string; to: string; classId: string; showInstitute: boolean;
+}) {
+  const rows = receiptRows(scope, from, to, classId);
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  const byMode = Object.entries(groupBy(rows, (r) => r.mode))
+    .map(([m, rs]) => `${m}: ${formatCurrency(rs.reduce((s, r) => s + r.amount, 0))}`)
+    .join(" · ");
+  return (
+    <>
+      <Card className="mb-4">
+        <CardHeader>
+          <div>
+            <CardTitle>Total collected</CardTitle>
+            <CardDescription>
+              {from === to ? formatDate(from) : `${formatDate(from)} – ${formatDate(to)}`} · {rows.length} receipt{rows.length === 1 ? "" : "s"}{byMode ? ` · ${byMode}` : ""}
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <p className="text-3xl font-semibold">{formatCurrency(total)}</p>
+      </Card>
+      <DataTable rowKey={(r) => r.id} rows={rows} empty="No receipts on these dates"
+        columns={[
+          { key: "date", header: "Date", render: (r) => <span className="whitespace-nowrap">{formatDate(r.date)}</span> },
+          ...instituteColumn<(typeof rows)[number]>(showInstitute),
+          { key: "rcp", header: "Receipt #", render: (r) => (
+            <Link href={`/fees/receipts/${r.id}`} className="font-mono text-xs text-[var(--color-brand)] hover:underline">{r.receiptNo}</Link>
+          )},
+          { key: "student", header: "Student", render: (r) => (
+            <div><div className="font-medium">{r.student}</div><div className="text-xs text-[var(--color-fg-muted)]">{[r.adm, r.className].filter(Boolean).join(" · ")}</div></div>
+          ), footer: "Total" },
+          { key: "heads", header: "Fee heads", render: (r) => <span className="text-xs">{r.heads}</span> },
+          { key: "mode", header: "Mode", render: (r) => <Badge tone="info">{r.mode}</Badge> },
+          { key: "disc", header: "Discount", render: (r) => (r.discount ? formatCurrency(r.discount) : <span className="text-[var(--color-fg-subtle)]">—</span>), footer: formatCurrency(rows.reduce((s, r) => s + r.discount, 0)) },
+          { key: "amt", header: "Amount", render: (r) => <span className="font-semibold">{formatCurrency(r.amount)}</span>, footer: formatCurrency(total) },
+          { key: "by", header: "Collected by", render: (r) => <span className="text-xs">{r.collectedBy}</span> },
         ]}
       />
     </>
