@@ -6,6 +6,7 @@ import { Input, Select, Field } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { collectFee } from "../../actions";
 import { withMinDelay } from "@/lib/utils";
+import { Plus, Trash2 } from "lucide-react";
 
 type Mode = "CASH" | "BANK" | "CARD" | "UPI" | "CHEQUE" | "ONLINE";
 type HeadRef = { head: string; remaining: number };
@@ -45,6 +46,12 @@ export function CollectFeeForm({
   const [amount, setAmount] = useState<number>(balance);
   const [discount, setDiscount] = useState<number>(0);
   const [headAmounts, setHeadAmounts] = useState<Record<string, string>>(() => allocate(allHeads, balance));
+  // Fees typed at the counter (ID card, TC, uniform…): charged and paid now.
+  const [others, setOthers] = useState<{ head: string; amount: string }[]>([]);
+  const otherList = others
+    .map((o) => ({ head: o.head.trim(), amount: Number(o.amount) || 0 }))
+    .filter((o) => o.head && o.amount > 0);
+  const otherTotal = otherList.reduce((s, o) => s + o.amount, 0);
   const router = useRouter();
 
   const defaultAccount = accounts.find((a) => (mode === "CASH" ? a.type === "CASH" : a.type === "BANK"));
@@ -120,7 +127,7 @@ export function CollectFeeForm({
 
         <Field label="Amount received *" hint={`Max ${inr(Math.max(0, balance - safeDiscount))}`}>
           <Input
-            name="amount" type="number" min="0" max={Math.max(0, balance - safeDiscount)} step="1" required
+            name="amount" type="number" min="0" max={Math.max(0, balance - safeDiscount)} step="1" required={balance > 0}
             value={Number.isFinite(amount) ? String(amount) : ""}
             // Clamp what is shown, not just what is submitted, so the box never
             // displays more than the outstanding balance.
@@ -138,7 +145,7 @@ export function CollectFeeForm({
           </Select>
         </Field>
 
-        <div className="sm:col-span-2">
+        {balance > 0 && <div className="sm:col-span-2">
           <Field
             label="Fee types / heads *"
             hint="Auto-filled in priority order (previous-year dues first). Untick or retype a head to allocate manually."
@@ -185,6 +192,40 @@ export function CollectFeeForm({
           </div>
           <input type="hidden" name="feeHeads" value={JSON.stringify(headBreakup)} />
           <input type="hidden" name="feeHead" value={headBreakup.map((h) => h.head).join(", ")} />
+        </div>}
+
+        <div className="sm:col-span-2">
+          <Field
+            label="Other fees (optional)"
+            hint="Any fee not in the list above — e.g. ID card, Uniform, TC. Type the name and amount; it is added to this student and paid on this receipt."
+          >
+            <div className="flex flex-col gap-2 rounded-md border border-dashed border-[var(--color-border-strong)] p-3">
+              {others.map((o, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    className="flex-1" placeholder="Fee name, e.g. ID card" maxLength={60}
+                    value={o.head}
+                    onChange={(e) => setOthers((rs) => rs.map((r, idx) => (idx === i ? { ...r, head: e.target.value } : r)))}
+                  />
+                  <Input
+                    className="w-32" type="number" min="1" step="1" placeholder="Amount"
+                    value={o.amount}
+                    onChange={(e) => setOthers((rs) => rs.map((r, idx) => (idx === i ? { ...r, amount: e.target.value } : r)))}
+                  />
+                  <Button type="button" variant="ghost" size="sm" aria-label="Remove fee"
+                    onClick={() => setOthers((rs) => rs.filter((_, idx) => idx !== i))}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <div>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setOthers((rs) => [...rs, { head: "", amount: "" }])}>
+                  <Plus className="h-3.5 w-3.5" />Add other fee
+                </Button>
+              </div>
+            </div>
+          </Field>
+          <input type="hidden" name="otherFees" value={JSON.stringify(otherList)} />
         </div>
 
         <Field label="Discount / concession" hint="Counts as fees paid — no money is received">
@@ -217,9 +258,21 @@ export function CollectFeeForm({
             </>
           )}
           <div className="flex items-center justify-between">
-            <span className="text-[var(--color-fg-muted)]">Paying now</span>
+            <span className="text-[var(--color-fg-muted)]">Paying now{otherTotal > 0 ? " (fees above)" : ""}</span>
             <span className="font-semibold">{inr(safeAmount)}</span>
           </div>
+          {otherTotal > 0 && (
+            <>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-[var(--color-fg-muted)]">+ Other fees</span>
+                <span className="font-semibold">{inr(otherTotal)}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between">
+                <span className="font-medium">Total cash to take now</span>
+                <span className="font-semibold">{inr(safeAmount + otherTotal)}</span>
+              </div>
+            </>
+          )}
           {safeDiscount > 0 && (
             <div className="mt-1 flex items-center justify-between">
               <span className="text-[var(--color-fg-muted)]">Discount granted</span>
@@ -259,7 +312,7 @@ export function CollectFeeForm({
         {error && <p className="sm:col-span-2 text-xs text-red-600">{error}</p>}
 
         <div className="sm:col-span-2 flex justify-end gap-2">
-          <Button type="submit" disabled={pending || settled <= 0} loading={pending}>Record payment</Button>
+          <Button type="submit" disabled={pending || settled + otherTotal <= 0} loading={pending}>Record payment</Button>
         </div>
       </form>
     </Card>

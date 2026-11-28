@@ -43,6 +43,25 @@ export function fitText(text: string, font: PDFFont, size: number, maxW: number)
   return `${t}...`;
 }
 
+/** Splits text into lines that fit maxW; the last allowed line is shortened with "...". */
+export function wrapText(text: string, font: PDFFont, size: number, maxW: number, maxLines: number): string[] {
+  const words = pdfSafe(text).split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (font.widthOfTextAtSize(next, size) <= maxW || !cur) cur = next;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = fitText(`${kept[maxLines - 1]} ${lines.slice(maxLines).join(" ")}`, font, size, maxW);
+    return kept;
+  }
+  return lines.map((l) => fitText(l, font, size, maxW));
+}
+
 function drawText(page: PDFPage, text: string, x: number, y: number, font: PDFFont, size = 10, color = rgb(0.1, 0.11, 0.14)) {
   page.drawText(pdfSafe(String(text ?? "")), { x, y, size, font, color });
 }
@@ -70,16 +89,23 @@ export async function renderTablePdf(opts: PdfTableOptions): Promise<Uint8Array>
   const scale = (PAGE_W - MARGIN * 2) / natural;
   const widths = opts.columns.map((c) => c.width * scale);
 
+  // Headers wrap onto up to 3 lines so fee-head names stay readable.
+  const HEAD_SIZE = 8;
+  const HEAD_LINE = 10;
+  const headerLines = opts.columns.map((c, i) => wrapText(String(c.header), bold, HEAD_SIZE, widths[i] - 8, 3));
+  const headerRows = Math.max(1, ...headerLines.map((l) => l.length));
   const drawHeader = () => {
-    page.drawRectangle({ x: MARGIN, y: y - 4, width: PAGE_W - MARGIN * 2, height: LINE_H + 2, color: rgb(0.95, 0.96, 0.98) });
+    const h = headerRows * HEAD_LINE + 6;
+    page.drawRectangle({ x: MARGIN, y: y - h + HEAD_LINE + 2, width: PAGE_W - MARGIN * 2, height: h, color: rgb(0.95, 0.96, 0.98) });
     let x = MARGIN + 6;
     opts.columns.forEach((c, i) => {
-      const label = fitText(String(c.header), bold, 9, widths[i] - 8);
-      const tx = c.align === "right" ? x + widths[i] - 12 - bold.widthOfTextAtSize(label, 9) : x;
-      drawText(page, label, tx, y, bold, 9, rgb(0.35, 0.38, 0.45));
+      headerLines[i].forEach((line, li) => {
+        const tx = c.align === "right" ? x + widths[i] - 12 - bold.widthOfTextAtSize(line, HEAD_SIZE) : x;
+        drawText(page, line, tx, y - li * HEAD_LINE, bold, HEAD_SIZE, rgb(0.35, 0.38, 0.45));
+      });
       x += widths[i];
     });
-    y -= LINE_H + 4;
+    y -= h + 2;
   };
   drawHeader();
 

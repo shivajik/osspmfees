@@ -18,8 +18,8 @@ export default async function CollectPaymentPage({ params }: { params: Promise<{
   if (!assignment || assignment.instituteId !== user.instituteId) notFound();
   if (assignment.carriedForwardTo) redirect("/fees");
 
+  // A fully paid student can still be charged other fees (TC, ID card…) here.
   const balance = assignmentBalance(assignment);
-  if (balance <= 0) redirect("/fees");
 
   const student = store.students.get(assignment.studentId);
   const accounts = Array.from(store.accounts.values())

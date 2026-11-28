@@ -5,6 +5,7 @@ import { assignmentYearId, scopeByInstitute, store, isActivePayment } from "@/li
 import { renderTablePdf } from "@/lib/export/pdf";
 import { renderXlsx } from "@/lib/export/xlsx";
 import { classRows, filterAssignments, headRows, studentHeadRows } from "@/lib/reports/fee-heads";
+import { receiptRows, todayIST } from "@/lib/reports/receipts";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,7 @@ type Format = "csv" | "xlsx" | "pdf";
 
 const TAB_TITLES: Record<string, string> = {
   daily: "Daily collection",
+  receipts: "Daily collection - receipt-wise",
   monthly: "Monthly collection",
   classwise: "Class-wise fees",
   student: "Student-wise fees",
@@ -62,7 +64,17 @@ export async function GET(req: Request) {
   const total = <T,>(xs: T[], f: (x: T) => number) => xs.reduce((s, x) => s + f(x), 0);
 
   let rows: (string | number)[][] = [];
-  if (tab === "daily" || tab === "monthly") {
+  if (tab === "receipts") {
+    const isDate = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const from = isDate(url.searchParams.get("from")) ? url.searchParams.get("from")! : todayIST();
+    const to = isDate(url.searchParams.get("to")) ? url.searchParams.get("to")! : from;
+    const list = receiptRows(scope, from, to, url.searchParams.get("classId") ?? "");
+    rows = [["Date", ...instHead, "Receipt #", "Student", "Admission", "Class", "Fee heads", "Mode", "Discount", "Amount", "Collected by"]];
+    list.forEach((r) => rows.push([
+      r.date, ...inst(r.instituteId), r.receiptNo, r.student, r.adm, r.className, r.heads, r.mode, r.discount, r.amount, r.collectedBy,
+    ]));
+    rows.push(["", ...(showInstitute ? [""] : []), "", "TOTAL", "", "", "", "", total(list, (r) => r.discount), total(list, (r) => r.amount), ""]);
+  } else if (tab === "daily" || tab === "monthly") {
     const key = tab === "daily" ? 10 : 7;
     const map = new Map<string, { period: string; instituteId: string; count: number; total: number; by: Set<string> }>();
     scopeByInstitute(store.feePayments.values(), scope).filter(isActivePayment).forEach((p) => {
@@ -90,7 +102,7 @@ export async function GET(req: Request) {
     const { heads, rows: students } = studentHeadRows(feeAssignments());
     const cls = classRows(students, showInstitute);
     const pendHeads = heads.filter((h) => cls.some((c) => c.pendingByHead[h]));
-    rows = [[...instHead, "Class", "Students", "With dues", "Payable", "Received", "Balance", ...pendHeads.map((h) => `Pending: ${h}`)]];
+    rows = [[...instHead, "Class", "Students", "With dues", "Payable", "Received", "Balance", ...pendHeads.map((h) => `${h} (due)`)]];
     cls.forEach((c) => rows.push([
       ...inst(c.instituteId), c.className, c.students, c.pendingStudents, c.payable, c.received, c.balance,
       ...pendHeads.map((h) => c.pendingByHead[h] ?? 0),
@@ -219,7 +231,9 @@ export async function GET(req: Request) {
       const isNumeric = typeof sample?.[i] === "number";
       // Size each column to its longest value so long text (e.g. "Collected by")
       // doesn't run into the next column.
-      const longest = Math.max(String(h).length, ...body.map((r) => String(r[i] ?? "").length));
+      // Headers wrap, so size by the longest header *word* plus the data.
+      const headerWord = Math.max(...String(h).split(/\s+/).map((w) => w.length));
+      const longest = Math.max(headerWord, ...body.map((r) => String(r[i] ?? "").length));
       const width = isNumeric ? Math.max(50, Math.min(longest, 12) * 6 + 16) : Math.max(60, Math.min(longest, 60) * 5.2 + 16);
       return { header: String(h), width, align: (isNumeric ? "right" : "left") as "left" | "right" };
     });

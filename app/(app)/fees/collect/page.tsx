@@ -261,12 +261,19 @@ export default async function CollectCounterPage({
                             ? <Badge tone="neutral">CARRIED FORWARD</Badge>
                             : <Badge tone={a.status === "PAID" ? "success" : a.status === "PARTIAL" ? "info" : "warning"}>{a.status}</Badge>}
                         </div>
-                        {balance > 0 && (
+                        {balance > 0 ? (
                           <Link
                             href={`/fees/collect/${a.id}`}
                             className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-[var(--color-brand)] px-3 text-xs font-medium text-white transition-colors hover:brightness-110"
                           >
                             <CreditCard className="h-3.5 w-3.5" />Collect
+                          </Link>
+                        ) : !a.carriedForwardTo && (
+                          <Link
+                            href={`/fees/collect/${a.id}`}
+                            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-[var(--color-border-strong)] px-3 text-xs font-medium hover:bg-[var(--color-surface-2)]"
+                          >
+                            <CreditCard className="h-3.5 w-3.5" />Other fee
                           </Link>
                         )}
                       </div>
