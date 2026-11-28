@@ -5,7 +5,7 @@ import { assignmentBalance, scopeByInstitute, store } from "@/lib/db/store";
 import { formatCurrency } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/ui/table";
-import { NewClassButton } from "./_actions";
+import { EditClassButton, NewClassButton } from "./_actions";
 import { DeleteButton } from "@/components/delete-button";
 import { compareClassNames, normalizeClassName } from "@/lib/academics";
 import { ListToolbar } from "@/components/list-toolbar";
@@ -121,7 +121,8 @@ export default async function ClassesPage({
             </div>
           ) : <span className="text-[var(--color-fg-subtle)]">—</span> },
           { key: "actions", header: "", render: (r) => canWrite ? (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-1">
+              <EditClassButton cls={{ id: r.row.id, name: r.row.name, code: r.row.code }} />
               <DeleteButton kind="class" id={r.row.id} label={normalizeClassName(r.row.name)} what="class" />
             </div>
           ) : null },
